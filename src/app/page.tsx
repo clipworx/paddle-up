@@ -10,42 +10,42 @@ const PASSWORD_KEY_PREFIX = "paddle-up-edit-pw-v1:";
 const FEATURES = [
   {
     title: "Smart rotation",
-    body: "Generates balanced matches so everyone gets equal court time and partners up with new faces every round.",
+    body: "Everyone gets equal court time, partners with new teammates every round, and sits out one game between matches so nobody plays back-to-back.",
   },
   {
-    title: "Skill-based teams",
-    body: "Once everyone has played together, teams are rebalanced so matches stay competitive.",
+    title: "Mixed or skill-separated",
+    body: "Rotate everyone in one pool, or flip the skill-separation switch to split casual and competitive players into their own rotations.",
   },
   {
-    title: "Multiple courts",
-    body: "Run up to four courts in parallel and the queue keeps everyone busy without overlaps.",
+    title: "Up to four courts",
+    body: "Run one to four courts at once. Players are never double-booked, and the upcoming queue always shows the next three matches across all courts.",
   },
   {
-    title: "Live scoring",
-    body: "Score is shared with every phone in the group in real time — no refresh needed.",
+    title: "Real-time scoring",
+    body: "Editors bump the score and every phone in the group sees it update instantly — no refresh, no reloads.",
   },
   {
-    title: "Server tracking",
-    body: "Track the serving team, 1st / 2nd server, and call the score with a tap.",
+    title: "Server & announcer",
+    body: "Track which team is serving plus 1st / 2nd server, then tap the announcer to call the score or read the matchup out loud.",
   },
   {
-    title: "Rest & resume",
-    body: "Anyone can sit out a game; the rotation automatically fills their spot without missing a beat.",
+    title: "Rest, change, remove",
+    body: "Mark a player as resting to sit out a game, change a skill level from their profile, or remove them entirely — the queue re-shuffles automatically.",
   },
 ];
 
 const STEPS = [
   {
     title: "Create an open play",
-    body: "Tap Create Open Play, choose an edit password, and you'll get a 6-character code to share.",
+    body: "Tap Create Open Play, pick an edit password, and you'll get a 6-character code unique to your session.",
   },
   {
     title: "Share the code",
-    body: "Everyone else opens the app, taps Join with code, and types the same 6 characters to watch live.",
+    body: "Your group opens the app, taps Join with code, and types the 6 characters. They join in view-only mode instantly.",
   },
   {
-    title: "Play and score",
-    body: "Add players, set how many courts are open, and tap any court to generate matches and score them.",
+    title: "Add players and play",
+    body: "Enter players with their skill levels, open the courts you'll use, generate matches, and score them as you go. End the session when everyone's done.",
   },
 ];
 
@@ -123,8 +123,9 @@ export default function Landing() {
           Paddle Up
         </h1>
         <p className="text-base sm:text-lg text-muted max-w-xl mx-auto">
-          Automatic match rotation, live scoring, and shared courts for your
-          pickleball group. Create a session, share the code, and play.
+          Balanced matches, live scores, and a shared match queue for your
+          pickleball group. Create a session, share the 6-character code, and
+          you'll be playing in under a minute.
         </p>
 
         {mode === "idle" && (
@@ -324,10 +325,11 @@ export default function Landing() {
           Viewers vs editors
         </h3>
         <p className="text-sm text-muted max-w-xl mx-auto">
-          Anyone with the session code can watch the session live. Only people
-          with the edit password can add players, generate matches, bump
-          scores, and record results. Start as a viewer and unlock editing from
-          the lock icon in the top right.
+          Anyone with the session code can watch the rotation, scores, and
+          upcoming queue live. Only people who enter the edit password can add
+          players, generate matches, bump scores, or end the session. Join as a
+          viewer first and tap the lock pill in the top right when you're ready
+          to edit.
         </p>
       </section>
 
