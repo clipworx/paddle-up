@@ -110,22 +110,23 @@ export async function POST(req: Request) {
       .single()
       .then(({ data: adminRow }) => {
         if (adminRow?.email) {
-          sendBookingNotification(adminRow.email, {
-            locationName: loc?.name ?? "",
-            courtName: courtRow.name ?? "",
-            date,
-            startTime: start_time,
-            endTime: end_time,
-            bookerName: booker_name,
-            bookerEmail: booker_email,
-            playerCount: player_count,
-            notes,
-            status: status as "confirmed" | "pending_payment",
-            bookingId: data.id,
-          }).catch(() => {});
+          Promise.resolve(
+            sendBookingNotification(adminRow.email, {
+              locationName: loc?.name ?? "",
+              courtName: courtRow.name ?? "",
+              date,
+              startTime: start_time,
+              endTime: end_time,
+              bookerName: booker_name,
+              bookerEmail: booker_email,
+              playerCount: player_count,
+              notes,
+              status: status as "confirmed" | "pending_payment",
+              bookingId: data.id,
+            })
+          ).catch(() => {});
         }
       })
-      .catch(() => {});
   }
 
   return NextResponse.json({
