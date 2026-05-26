@@ -11,16 +11,22 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+export type AdminRole = "admin" | "location_admin";
+
 export type AdminClaims = JWTPayload & {
   sub: string;
   username: string;
+  role: AdminRole;
+  location_id: string | null;
 };
 
 export async function signAdminToken(
   adminId: string,
-  username: string
+  username: string,
+  role: AdminRole,
+  locationId: string | null
 ): Promise<string> {
-  return new SignJWT({ username })
+  return new SignJWT({ username, role, location_id: locationId })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(adminId)
     .setIssuer(ISSUER)
@@ -39,7 +45,8 @@ export async function verifyAdminToken(
     });
     if (
       typeof payload.sub !== "string" ||
-      typeof payload.username !== "string"
+      typeof payload.username !== "string" ||
+      (payload.role !== "admin" && payload.role !== "location_admin")
     ) {
       return null;
     }

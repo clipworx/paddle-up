@@ -153,6 +153,17 @@ export default function Landing() {
           </div>
         )}
 
+        {mode === "idle" && (
+          <div className="pt-2">
+            <a
+              href="/book"
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-accent/40 text-accent px-6 py-3 text-base font-semibold hover:bg-accent/10 hover:border-accent transition-colors"
+            >
+              <span>📅</span> Book a Court
+            </a>
+          </div>
+        )}
+
         {mode === "create" && (
           <form
             onSubmit={doCreate}

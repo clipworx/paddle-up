@@ -1,0 +1,63 @@
+import { NextResponse } from "next/server";
+import { getAdminSupabase } from "@/lib/supabase-admin";
+import { getAdminClaims } from "@/lib/server-auth";
+
+export async function GET() {
+  const supabase = getAdminSupabase();
+  const { data, error } = await supabase
+    .from("locations")
+    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, courts(id, name, is_active)")
+    .order("name");
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  const locations = (data ?? []).map((loc) => ({
+    ...loc,
+    court_count: Array.isArray(loc.courts) ? loc.courts.length : 0,
+  }));
+  return NextResponse.json({ locations });
+}
+
+export async function POST(req: Request) {
+  const claims = await getAdminClaims();
+  if (!claims || claims.role !== "admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  let body: {
+    name?: unknown;
+    address?: unknown;
+    description?: unknown;
+    court_count?: unknown;
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const address = typeof body.address === "string" ? body.address.trim() : "";
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  const court_count = typeof body.court_count === "number" ? body.court_count : 0;
+
+  if (!name) {
+    return NextResponse.json({ error: "name_required" }, { status: 400 });
+  }
+  if (court_count < 1 || court_count > 16) {
+    return NextResponse.json({ error: "court_count_out_of_range" }, { status: 400 });
+  }
+
+  const supabase = getAdminSupabase();
+  const { data, error } = await supabase.rpc("admin_create_location", {
+    p_name: name,
+    p_address: address,
+    p_description: description,
+    p_court_count: court_count,
+  });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ id: data }, { status: 201 });
+}

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAdminSupabase } from "@/lib/supabase-admin";
-import { signAdminToken, ADMIN_COOKIE_NAME } from "@/lib/auth";
+import { signAdminToken, ADMIN_COOKIE_NAME, type AdminRole } from "@/lib/auth";
+
+type VerifyResult = {
+  id: string;
+  role: AdminRole;
+  location_id: string | null;
+};
 
 export async function POST(req: Request) {
   let body: { username?: unknown; password?: unknown };
@@ -27,15 +33,21 @@ export async function POST(req: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (typeof data !== "string" || !data) {
+  if (!data || typeof (data as VerifyResult).id !== "string") {
     return NextResponse.json(
       { error: "invalid_credentials" },
       { status: 401 }
     );
   }
 
-  const token = await signAdminToken(data, username);
-  const res = NextResponse.json({ ok: true });
+  const result = data as VerifyResult;
+  const token = await signAdminToken(
+    result.id,
+    username,
+    result.role,
+    result.location_id
+  );
+  const res = NextResponse.json({ ok: true, role: result.role });
   res.cookies.set(ADMIN_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

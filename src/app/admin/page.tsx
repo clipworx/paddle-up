@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Logo } from "@/components/Logo";
+import { AdminNav } from "@/components/AdminNav";
 
 type AdminSession = {
   id: string;
@@ -32,6 +32,13 @@ export default function AdminDashboardPage() {
   const [passwordModal, setPasswordModal] = useState<PasswordModal | null>(
     null
   );
+
+  // Redirect location admins to their scoped dashboard
+  useEffect(() => {
+    fetch("/api/admin/me").then((r) => r.json()).then((j) => {
+      if (j.role === "location_admin") router.replace("/admin/my-location");
+    });
+  }, [router]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -143,34 +150,18 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl w-full px-4 py-10 space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Logo size={44} />
-          <div>
-            <div className="inline-block rounded-full bg-accent/15 text-accent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-              Admin
-            </div>
-            <h1 className="text-2xl font-bold text-foreground mt-1">
-              Sessions
-            </h1>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-          >
-            Refresh
-          </button>
-          <button
-            onClick={onLogout}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-          >
-            Log out
-          </button>
-        </div>
-      </header>
+    <>
+      <AdminNav onLogout={onLogout} />
+      <main className="mx-auto max-w-5xl w-full px-4 py-10 space-y-8">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-foreground">Sessions</h1>
+        <button
+          onClick={load}
+          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+        >
+          Refresh
+        </button>
+      </div>
 
       {error && (
         <p className="rounded-lg border border-accent/40 bg-accent/5 px-4 py-3 text-sm text-accent font-semibold">
@@ -376,5 +367,6 @@ export default function AdminDashboardPage() {
         </div>
       )}
     </main>
+    </>
   );
 }

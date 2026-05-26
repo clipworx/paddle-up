@@ -31,7 +31,9 @@ function LoginForm() {
         );
         return;
       }
-      const next = params.get("next") || "/admin";
+      const defaultDest =
+        json.role === "location_admin" ? "/admin/my-location" : "/admin";
+      const next = params.get("next") || defaultDest;
       router.replace(next);
     } catch (err) {
       setError((err as Error).message);
