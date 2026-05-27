@@ -11,12 +11,13 @@ type AdminEntry = {
   role: "admin" | "location_admin";
   location_id: string | null;
   location_name: string | null;
+  email: string | null;
   created_at: string;
   last_login_at: string | null;
 };
 
-type SuperAdminForm = { username: string; password: string; confirm: string };
-const EMPTY_SUPER: SuperAdminForm = { username: "", password: "", confirm: "" };
+type SuperAdminForm = { username: string; password: string; confirm: string; email: string };
+const EMPTY_SUPER: SuperAdminForm = { username: "", password: "", confirm: "", email: "" };
 
 export default function AdminAdminsPage() {
   const router = useRouter();
@@ -75,7 +76,7 @@ export default function AdminAdminsPage() {
       const res = await fetch("/api/admin/admins", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ role: "admin", username: adminForm.username, password: adminForm.password }),
+        body: JSON.stringify({ role: "admin", username: adminForm.username, password: adminForm.password, email: adminForm.email || undefined }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -173,6 +174,7 @@ export default function AdminAdminsPage() {
                   <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Username</th>
                   <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Role</th>
                   <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Location</th>
+                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Email</th>
                   <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Last login</th>
                   <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Actions</th>
                 </tr>
@@ -197,6 +199,7 @@ export default function AdminAdminsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-muted">{a.location_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-muted text-xs">{a.email ?? "—"}</td>
                     <td className="px-4 py-3 text-muted text-xs">
                       {a.last_login_at ? new Date(a.last_login_at).toLocaleString() : "Never"}
                     </td>
@@ -255,6 +258,20 @@ export default function AdminAdminsPage() {
                 placeholder="e.g. john_doe"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
               />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="text-xs uppercase tracking-wide text-muted font-semibold">
+                Notification email
+              </span>
+              <input
+                type="email"
+                value={adminForm.email}
+                onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                placeholder="e.g. admin@venue.com"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
+              />
+              <p className="text-[11px] text-muted">Receives booking notifications.</p>
             </label>
 
             <label className="block space-y-1">

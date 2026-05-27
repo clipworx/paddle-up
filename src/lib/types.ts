@@ -92,6 +92,9 @@ export type Location = {
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
+  // Map
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export type Court = {

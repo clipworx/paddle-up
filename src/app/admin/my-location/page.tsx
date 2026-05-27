@@ -3,9 +3,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Logo } from "@/components/Logo";
 import { AdminNav } from "@/components/AdminNav";
 import type { Court, Booking } from "@/lib/types";
+
+const MapPicker = dynamic(() => import("@/components/MapPicker"), {
+  ssr: false,
+  loading: () => <div className="rounded-xl border border-border bg-surface animate-pulse" style={{ height: 300 }} />,
+});
 
 type Me = { username: string; role: string; location_id: string | null };
 type LocationInfo = {
@@ -23,6 +29,8 @@ type LocationInfo = {
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type PricingForm = {
@@ -92,6 +100,10 @@ export default function MyLocationPage() {
   const [qrUploading, setQrUploading] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [mapLat, setMapLat] = useState<number | null>(null);
+  const [mapLng, setMapLng] = useState<number | null>(null);
+  const [mapSaving, setMapSaving] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const courtNameRef = useRef<HTMLInputElement>(null);
   const qrFileRef = useRef<HTMLInputElement>(null);
 
@@ -123,6 +135,8 @@ export default function MyLocationPage() {
         weekend_open_hour: loc.weekend_open_hour ?? 0,
         weekend_close_hour: loc.weekend_close_hour ?? 24,
       });
+      setMapLat(loc.latitude ?? null);
+      setMapLng(loc.longitude ?? null);
     }
   }, []);
 
@@ -282,6 +296,27 @@ export default function MyLocationPage() {
     if (!location || !confirm("Remove payment QR? Customers will no longer be prompted to pay.")) return;
     await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}/qr`, { method: "DELETE" });
     if (me?.location_id) loadLocation(me.location_id);
+  }
+
+  async function onSaveCoordinates(e: FormEvent) {
+    e.preventDefault();
+    if (!location) return;
+    setMapSaving(true);
+    setMapError(null);
+    try {
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}/coordinates`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ latitude: mapLat, longitude: mapLng }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to save location");
+      if (me?.location_id) loadLocation(me.location_id);
+    } catch (err) {
+      setMapError((err as Error).message);
+    } finally {
+      setMapSaving(false);
+    }
   }
 
   async function onConfirmPayment(id: string) {
@@ -487,6 +522,27 @@ export default function MyLocationPage() {
             className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
           >
             {qrUploading ? "Uploading…" : "Save QR"}
+          </button>
+        </form>
+      </section>
+
+      {/* ── Map Location ── */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Map location</h2>
+          <p className="text-xs text-muted mt-0.5">
+            Pin your exact location so customers can find you on the booking page.
+          </p>
+        </div>
+        <form onSubmit={onSaveCoordinates} className="space-y-3 rounded-xl border border-border bg-background/60 p-4">
+          <MapPicker lat={mapLat} lng={mapLng} onChange={(lat, lng) => { setMapLat(lat); setMapLng(lng); }} />
+          {mapError && <p className="text-xs text-accent font-semibold">{mapError}</p>}
+          <button
+            type="submit"
+            disabled={mapSaving || mapLat === null}
+            className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+          >
+            {mapSaving ? "Saving…" : "Save location"}
           </button>
         </form>
       </section>

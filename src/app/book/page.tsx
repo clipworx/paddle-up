@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Logo } from "@/components/Logo";
 import type { Court, Booking, Location } from "@/lib/types";
 import { TIME_SLOTS } from "@/lib/types";
+
+const MapView = dynamic(() => import("@/components/MapView"), {
+  ssr: false,
+  loading: () => <div className="rounded-xl border border-border bg-surface animate-pulse" style={{ height: 220 }} />,
+});
 
 type BookingForm = {
   court_id: string;
@@ -171,6 +177,7 @@ export default function BookPage() {
   const [loadingCourts, setLoadingCourts] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [form, setForm] = useState<BookingForm>({
     court_id: "",
     startIdx: 0,
@@ -416,6 +423,17 @@ export default function BookPage() {
             <h1 className="text-2xl font-bold text-foreground mt-1">
               {selectedLocation ? selectedLocation.name : "Reserve a Court"}
             </h1>
+            {selectedLocation?.address && (
+              <p className="text-xs text-muted mt-0.5">{selectedLocation.address}</p>
+            )}
+            {selectedLocation?.latitude && selectedLocation?.longitude && (
+              <button
+                onClick={() => setShowMap(true)}
+                className="mt-1 text-xs font-semibold text-accent hover:underline"
+              >
+                View on map ↗
+              </button>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -439,6 +457,39 @@ export default function BookPage() {
           </Link>
         </div>
       </header>
+
+      {/* Map modal */}
+      {showMap && selectedLocation?.latitude && selectedLocation?.longitude && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+          onClick={() => setShowMap(false)}
+        >
+          <div
+            className="w-full max-w-lg space-y-4 rounded-xl border border-border bg-background p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-foreground">{selectedLocation.name}</h2>
+                {selectedLocation.address && (
+                  <p className="text-xs text-muted mt-0.5">{selectedLocation.address}</p>
+                )}
+              </div>
+              <button
+                onClick={() => setShowMap(false)}
+                className="text-muted hover:text-foreground text-lg leading-none"
+              >
+                ✕
+              </button>
+            </div>
+            <MapView
+              lat={selectedLocation.latitude}
+              lng={selectedLocation.longitude}
+              label={selectedLocation.name}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Payment pending screen */}
       {confirmed?.requiresPayment && (

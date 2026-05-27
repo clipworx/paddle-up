@@ -3,8 +3,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { AdminNav } from "@/components/AdminNav";
 import type { Location } from "@/lib/types";
+
+const MapPicker = dynamic(() => import("@/components/MapPicker"), {
+  ssr: false,
+  loading: () => <div className="rounded-xl border border-border bg-surface animate-pulse" style={{ height: 300 }} />,
+});
 
 type AdminLocation = Location & {
   courts: Array<{ id: string; name: string; is_active: boolean }>;
@@ -70,6 +76,11 @@ export default function AdminLocationsPage() {
   const [pricingForm, setPricingForm] = useState<PricingForm>({ day_rate: "0", night_rate: "0", night_start_time: "18:00", open_hour: 0, close_hour: 24, weekend_night_start_time: "18:00", weekend_open_hour: 0, weekend_close_hour: 24 });
   const [pricingSaving, setPricingSaving] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
+  const [editMapId, setEditMapId] = useState<string | null>(null);
+  const [mapLat, setMapLat] = useState<number | null>(null);
+  const [mapLng, setMapLng] = useState<number | null>(null);
+  const [mapSaving, setMapSaving] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -183,6 +194,35 @@ export default function AdminLocationsPage() {
     }
   }
 
+  function openMap(loc: AdminLocation) {
+    setMapLat(loc.latitude ?? null);
+    setMapLng(loc.longitude ?? null);
+    setMapError(null);
+    setEditMapId(loc.id);
+  }
+
+  async function onSaveMap(e: FormEvent) {
+    e.preventDefault();
+    if (!editMapId) return;
+    setMapSaving(true);
+    setMapError(null);
+    try {
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(editMapId)}/coordinates`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ latitude: mapLat, longitude: mapLng }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to save");
+      setEditMapId(null);
+      await load();
+    } catch (err) {
+      setMapError((err as Error).message);
+    } finally {
+      setMapSaving(false);
+    }
+  }
+
   async function onLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
     router.replace("/admin/login");
@@ -275,6 +315,12 @@ export default function AdminLocationsPage() {
                     className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
                   >
                     Settings
+                  </button>
+                  <button
+                    onClick={() => openMap(loc)}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                  >
+                    {loc.latitude ? "📍 Map" : "Set map"}
                   </button>
                   <Link
                     href={`/admin/bookings?location=${encodeURIComponent(loc.id)}`}
@@ -477,6 +523,50 @@ export default function AdminLocationsPage() {
                 className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
               >
                 {pricingSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Map modal */}
+      {editMapId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+          onClick={() => { if (!mapSaving) setEditMapId(null); }}
+        >
+          <form
+            onSubmit={onSaveMap}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg space-y-4 rounded-xl border border-border bg-background p-6 shadow-lg"
+          >
+            <div>
+              <div className="inline-block rounded-full bg-accent/15 text-accent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+                Map location
+              </div>
+              <h2 className="mt-2 text-lg font-bold text-foreground">Pin exact location</h2>
+              <p className="text-xs text-muted mt-1">Click the map or drag the pin to mark the court entrance.</p>
+            </div>
+
+            <MapPicker lat={mapLat} lng={mapLng} onChange={(lat, lng) => { setMapLat(lat); setMapLng(lng); }} />
+
+            {mapError && <p className="text-sm text-accent font-semibold">{mapError}</p>}
+
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                type="button"
+                disabled={mapSaving}
+                onClick={() => setEditMapId(null)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={mapSaving || mapLat === null}
+                className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+              >
+                {mapSaving ? "Saving…" : "Save location"}
               </button>
             </div>
           </form>

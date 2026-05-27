@@ -133,6 +133,9 @@ alter table public.admins
     references public.locations(id) on delete set null;
 alter table public.admins
   add column if not exists email text;
+alter table public.locations
+  add column if not exists latitude  double precision,
+  add column if not exists longitude double precision;
 
 alter table public.admins enable row level security;
 -- No select policies: all access goes through service_role RPCs.

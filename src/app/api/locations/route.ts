@@ -7,7 +7,7 @@ export async function GET() {
   // Fetch active locations with their active court count
   const { data, error } = await supabase
     .from("locations")
-    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, courts(id)")
+    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, courts(id)")
     .eq("is_active", true)
     .order("name");
 
@@ -32,6 +32,8 @@ export async function GET() {
     payment_qr_url: loc.payment_qr_url ?? null,
     payment_account_name: loc.payment_account_name ?? null,
     payment_account_number: loc.payment_account_number ?? null,
+    latitude: loc.latitude ?? null,
+    longitude: loc.longitude ?? null,
     court_count: Array.isArray(loc.courts) ? loc.courts.length : 0,
   }));
 
