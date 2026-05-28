@@ -85,6 +85,9 @@ export default function AdminLocationsPage() {
   const [editCourtSaving, setEditCourtSaving] = useState(false);
   const [editCourtError, setEditCourtError] = useState<string | null>(null);
   const [togglingCourtId, setTogglingCourtId] = useState<string | null>(null);
+  const [editInfo, setEditInfo] = useState<{ id: string; name: string; address: string; description: string } | null>(null);
+  const [editInfoSaving, setEditInfoSaving] = useState(false);
+  const [editInfoError, setEditInfoError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -249,6 +252,33 @@ export default function AdminLocationsPage() {
     }
   }
 
+  async function onSaveInfo(e: FormEvent) {
+    e.preventDefault();
+    if (!editInfo) return;
+    if (!editInfo.name.trim()) { setEditInfoError("Name is required."); return; }
+    setEditInfoSaving(true);
+    setEditInfoError(null);
+    try {
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(editInfo.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: editInfo.name,
+          address: editInfo.address,
+          description: editInfo.description,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to save");
+      setEditInfo(null);
+      await load();
+    } catch (err) {
+      setEditInfoError((err as Error).message);
+    } finally {
+      setEditInfoSaving(false);
+    }
+  }
+
   async function onToggleCourtActive(id: string, activate: boolean) {
     setTogglingCourtId(id);
     try {
@@ -347,6 +377,12 @@ export default function AdminLocationsPage() {
                   )}
                 </div>
                 <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+                  <button
+                    onClick={() => setEditInfo({ id: loc.id, name: loc.name, address: loc.address ?? "", description: loc.description ?? "" })}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                  >
+                    Edit info
+                  </button>
                   <button
                     onClick={() => setExpandedId(expandedId === loc.id ? null : loc.id)}
                     className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
@@ -815,6 +851,84 @@ export default function AdminLocationsPage() {
               className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
             >
               {editCourtSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
+    {/* Edit location info modal */}
+    {editInfo && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+        onClick={() => { if (!editInfoSaving) setEditInfo(null); }}
+      >
+        <form
+          onSubmit={onSaveInfo}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-6 shadow-lg"
+        >
+          <div>
+            <div className="inline-block rounded-full bg-accent/15 text-accent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+              Edit location
+            </div>
+            <h2 className="mt-2 text-lg font-bold text-foreground">Location details</h2>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-xs uppercase tracking-wide text-muted font-semibold">
+              Name <span className="text-accent">*</span>
+            </span>
+            <input
+              type="text"
+              required
+              autoFocus
+              value={editInfo.name}
+              onChange={(e) => setEditInfo({ ...editInfo, name: e.target.value })}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-xs uppercase tracking-wide text-muted font-semibold">Address</span>
+            <input
+              type="text"
+              value={editInfo.address}
+              onChange={(e) => setEditInfo({ ...editInfo, address: e.target.value })}
+              placeholder="e.g. 123 Main St, Manila"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-xs uppercase tracking-wide text-muted font-semibold">Description</span>
+            <textarea
+              value={editInfo.description}
+              onChange={(e) => setEditInfo({ ...editInfo, description: e.target.value })}
+              rows={3}
+              placeholder="Brief description shown to customers…"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent resize-none"
+            />
+          </label>
+
+          {editInfoError && (
+            <p className="text-sm text-accent font-semibold">{editInfoError}</p>
+          )}
+
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              type="button"
+              disabled={editInfoSaving}
+              onClick={() => setEditInfo(null)}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={editInfoSaving}
+              className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+            >
+              {editInfoSaving ? "Saving…" : "Save"}
             </button>
           </div>
         </form>

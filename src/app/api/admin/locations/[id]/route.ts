@@ -68,6 +68,46 @@ export async function PATCH(req: Request, { params }: Params) {
   return NextResponse.json({ ok: true });
 }
 
+export async function PUT(req: Request, { params }: Params) {
+  const claims = await getAdminClaims();
+  if (!claims) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  const { id } = await params;
+
+  if (claims.role === "location_admin" && claims.location_id !== id) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  let body: { name?: unknown; address?: unknown; description?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  const name = typeof body.name === "string" ? body.name.trim() : null;
+  const address = typeof body.address === "string" ? body.address.trim() || null : undefined;
+  const description = typeof body.description === "string" ? body.description.trim() || null : undefined;
+
+  if (name !== null && !name) {
+    return NextResponse.json({ error: "name_required" }, { status: 400 });
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (name !== null) updates.name = name;
+  if (address !== undefined) updates.address = address;
+  if (description !== undefined) updates.description = description;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "no_fields" }, { status: 400 });
+  }
+
+  const supabase = getAdminSupabase();
+  const { error } = await supabase.from("locations").update(updates).eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
 export async function DELETE(_req: Request, { params }: Params) {
   const claims = await getAdminClaims();
   if (!claims || claims.role !== "admin") {
