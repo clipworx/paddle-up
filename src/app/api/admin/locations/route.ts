@@ -6,7 +6,7 @@ export async function GET() {
   const supabase = getAdminSupabase();
   const { data, error } = await supabase
     .from("locations")
-    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, courts(id, name, is_active)")
+    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, courts(id, name, description, is_active)")
     .order("name");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

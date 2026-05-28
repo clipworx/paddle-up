@@ -13,7 +13,7 @@ const MapPicker = dynamic(() => import("@/components/MapPicker"), {
 });
 
 type AdminLocation = Location & {
-  courts: Array<{ id: string; name: string; is_active: boolean }>;
+  courts: Array<{ id: string; name: string; description: string | null; is_active: boolean }>;
   court_count: number;
 };
 
@@ -81,6 +81,10 @@ export default function AdminLocationsPage() {
   const [mapLng, setMapLng] = useState<number | null>(null);
   const [mapSaving, setMapSaving] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [editCourt, setEditCourt] = useState<{ id: string; name: string; description: string } | null>(null);
+  const [editCourtSaving, setEditCourtSaving] = useState(false);
+  const [editCourtError, setEditCourtError] = useState<string | null>(null);
+  const [togglingCourtId, setTogglingCourtId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -223,6 +227,45 @@ export default function AdminLocationsPage() {
     }
   }
 
+  async function onSaveEditCourt(e: FormEvent) {
+    e.preventDefault();
+    if (!editCourt) return;
+    setEditCourtSaving(true);
+    setEditCourtError(null);
+    try {
+      const res = await fetch(`/api/admin/courts/${encodeURIComponent(editCourt.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: editCourt.name, description: editCourt.description }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to update court");
+      setEditCourt(null);
+      await load();
+    } catch (err) {
+      setEditCourtError((err as Error).message);
+    } finally {
+      setEditCourtSaving(false);
+    }
+  }
+
+  async function onToggleCourtActive(id: string, activate: boolean) {
+    setTogglingCourtId(id);
+    try {
+      const res = await fetch(`/api/admin/courts/${encodeURIComponent(id)}`, {
+        method: activate ? "PATCH" : "DELETE",
+        ...(activate ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ is_active: true }) } : {}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed");
+      await load();
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setTogglingCourtId(null);
+    }
+  }
+
   async function onLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
     router.replace("/admin/login");
@@ -341,22 +384,47 @@ export default function AdminLocationsPage() {
               </div>
 
               {expandedId === loc.id && loc.courts.length > 0 && (
-                <div className="border-t border-border px-5 py-3 bg-surface">
-                  <div className="flex flex-wrap gap-2">
-                    {loc.courts.map((c) => (
-                      <span
-                        key={c.id}
-                        className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
-                          c.is_active
-                            ? "border-border text-foreground bg-background"
-                            : "border-border text-muted bg-border/30"
-                        }`}
-                      >
-                        {c.name}
-                        {!c.is_active && " (inactive)"}
-                      </span>
-                    ))}
-                  </div>
+                <div className="border-t border-border px-5 py-3 bg-surface space-y-2">
+                  {loc.courts.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className={`text-sm font-semibold ${c.is_active ? "text-foreground" : "text-muted"}`}>
+                          {c.name}
+                        </span>
+                        {!c.is_active && (
+                          <span className="ml-2 text-xs text-muted">(inactive)</span>
+                        )}
+                        {c.description && (
+                          <p className="text-xs text-muted truncate">{c.description}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => setEditCourt({ id: c.id, name: c.name, description: c.description ?? "" })}
+                          className="rounded-lg border border-border px-3 py-1 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                        >
+                          Edit
+                        </button>
+                        {c.is_active ? (
+                          <button
+                            onClick={() => onToggleCourtActive(c.id, false)}
+                            disabled={togglingCourtId === c.id}
+                            className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+                          >
+                            {togglingCourtId === c.id ? "…" : "Deactivate"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onToggleCourtActive(c.id, true)}
+                            disabled={togglingCourtId === c.id}
+                            className="rounded-lg border border-green-400 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
+                          >
+                            {togglingCourtId === c.id ? "…" : "Activate"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -684,6 +752,74 @@ export default function AdminLocationsPage() {
         </div>
       )}
     </main>
+
+    {/* Edit court modal */}
+    {editCourt && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+        onClick={() => { if (!editCourtSaving) setEditCourt(null); }}
+      >
+        <form
+          onSubmit={onSaveEditCourt}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-background p-6 shadow-lg"
+        >
+          <div>
+            <div className="inline-block rounded-full bg-accent/15 text-accent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+              Edit court
+            </div>
+            <h2 className="mt-2 text-lg font-bold text-foreground">Update court details</h2>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-xs uppercase tracking-wide text-muted font-semibold">
+              Court name <span className="text-accent">*</span>
+            </span>
+            <input
+              type="text"
+              required
+              autoFocus
+              value={editCourt.name}
+              onChange={(e) => setEditCourt({ ...editCourt, name: e.target.value })}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-xs uppercase tracking-wide text-muted font-semibold">Description</span>
+            <textarea
+              value={editCourt.description}
+              onChange={(e) => setEditCourt({ ...editCourt, description: e.target.value })}
+              rows={3}
+              placeholder="Optional notes about this court…"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent resize-none"
+            />
+          </label>
+
+          {editCourtError && (
+            <p className="text-sm text-accent font-semibold">{editCourtError}</p>
+          )}
+
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              type="button"
+              disabled={editCourtSaving}
+              onClick={() => setEditCourt(null)}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={editCourtSaving}
+              className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+            >
+              {editCourtSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
     </>
   );
 }
