@@ -1,5 +1,7 @@
-import { generateMatch } from "./rotation";
+import { generateMatch, advanceQueue } from "./rotation";
 import { CompletedMatch, PendingMatch, Player } from "./types";
+
+export { advanceQueue };
 
 export const QUEUE_SIZE = 3;
 
@@ -9,22 +11,26 @@ export function activeCourtMatches(
   return courts.filter((m): m is PendingMatch => m !== null);
 }
 
+// Simulate upcoming matches from the queue without advancing state.
+// Uses accumulating exclusions so each slot picks a different set of players.
 export function fillQueue(
+  queue: string[],
   players: Player[],
   history: CompletedMatch[],
   courts: (PendingMatch | null)[],
-  upcoming: PendingMatch[],
-  skillSeparation = false
+  skillBased = false,
+  lockedPairs: [string, string][] = []
 ): PendingMatch[] {
   const active = activeCourtMatches(courts);
-  if (active.length === 0 && upcoming.length === 0) return [];
-  const result = [...upcoming];
-  while (result.length < QUEUE_SIZE) {
-    const next = generateMatch(players, history, active, result, skillSeparation);
-    if (!next) break;
-    result.push(next);
+  if (active.length === 0) return [];
+
+  const result: PendingMatch[] = [];
+  for (let i = 0; i < QUEUE_SIZE; i++) {
+    const match = generateMatch(queue, players, history, active, result, skillBased, lockedPairs);
+    if (!match) break;
+    result.push(match);
   }
-  return result.slice(0, QUEUE_SIZE);
+  return result;
 }
 
 export function resizeCourts(

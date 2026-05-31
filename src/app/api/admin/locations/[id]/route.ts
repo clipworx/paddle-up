@@ -78,7 +78,7 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  let body: { name?: unknown; address?: unknown; description?: unknown };
+  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -88,6 +88,7 @@ export async function PUT(req: Request, { params }: Params) {
   const name = typeof body.name === "string" ? body.name.trim() : null;
   const address = typeof body.address === "string" ? body.address.trim() || null : undefined;
   const description = typeof body.description === "string" ? body.description.trim() || null : undefined;
+  const accent_color = typeof body.accent_color === "string" ? body.accent_color.trim() || null : undefined;
 
   if (name !== null && !name) {
     return NextResponse.json({ error: "name_required" }, { status: 400 });
@@ -97,6 +98,7 @@ export async function PUT(req: Request, { params }: Params) {
   if (name !== null) updates.name = name;
   if (address !== undefined) updates.address = address;
   if (description !== undefined) updates.description = description;
+  if (accent_color !== undefined) updates.accent_color = accent_color;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

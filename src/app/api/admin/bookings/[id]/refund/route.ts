@@ -4,11 +4,19 @@ import { getAdminClaims } from "@/lib/server-auth";
 
 type Params = { params: Promise<{ id: string }> };
 
-export async function DELETE(_req: Request, { params }: Params) {
+export async function POST(req: Request, { params }: Params) {
   const claims = await getAdminClaims();
   if (!claims) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const { id } = await params;
+  let reason = "";
+  try {
+    const body = await req.json();
+    reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  } catch {
+    // reason stays empty
+  }
+
   const supabase = getAdminSupabase();
 
   if (claims.role === "location_admin" && claims.location_id) {
@@ -25,9 +33,9 @@ export async function DELETE(_req: Request, { params }: Params) {
 
   const { error } = await supabase
     .from("bookings")
-    .update({ status: "cancelled" })
+    .update({ status: "refunded", refund_reason: reason || null })
     .eq("id", id)
-    .in("status", ["confirmed", "pending_payment"]);
+    .neq("status", "refunded");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

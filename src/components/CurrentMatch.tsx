@@ -2,20 +2,27 @@
 
 import { useEffect, useRef } from "react";
 import { useNotifications } from "@/components/Notifications";
-import { PendingMatch, Player, ServerNumber, ServingTeam } from "@/lib/types";
+import { PendingMatch, Player, ResultMode, ServerNumber, ServingTeam } from "@/lib/types";
+
+export type MatchResult = {
+  scoreA?: number;
+  scoreB?: number;
+  winner: "A" | "B" | "tie";
+};
 
 type Props = {
-  label?: string;
   players: Player[];
   pending: PendingMatch | null;
   canGenerate: boolean;
   skillMode: boolean;
   readOnly?: boolean;
   onGenerate: () => void;
-  onRecord: (scoreA: number, scoreB: number) => void;
+  onRecord: (result: MatchResult) => void;
   onCancel: () => void;
   onSetServer: (team: ServingTeam, number: ServerNumber) => void;
   onBumpScore: (team: ServingTeam, delta: number) => void;
+  resultMode: ResultMode;
+  onSetResultMode: (mode: ResultMode) => void;
 };
 
 function nameOf(players: Player[], id: string): string {
@@ -130,7 +137,6 @@ function TeamScore({
 }
 
 export function CurrentMatch({
-  label,
   players,
   pending,
   canGenerate,
@@ -141,6 +147,8 @@ export function CurrentMatch({
   onSetServer,
   onBumpScore,
   readOnly,
+  resultMode,
+  onSetResultMode,
 }: Props) {
   const scoreA = pending?.liveScoreA ?? 0;
   const scoreB = pending?.liveScoreB ?? 0;
@@ -152,19 +160,9 @@ export function CurrentMatch({
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const preferred = [
-      "Samantha",
-      "Ava",
-      "Allison",
-      "Serena",
-      "Karen",
-      "Moira",
-      "Tessa",
-      "Fiona",
-      "Daniel",
-      "Google UK English Female",
-      "Google US English",
-      "Microsoft Aria",
-      "Microsoft Jenny",
+      "Samantha", "Ava", "Allison", "Serena", "Karen", "Moira", "Tessa",
+      "Fiona", "Daniel", "Google UK English Female", "Google US English",
+      "Microsoft Aria", "Microsoft Jenny",
     ];
     const scoreVoice = (v: SpeechSynthesisVoice) => {
       const name = v.name.toLowerCase();
@@ -187,42 +185,42 @@ export function CurrentMatch({
     };
     pick();
     window.speechSynthesis.addEventListener("voiceschanged", pick);
-    return () =>
-      window.speechSynthesis.removeEventListener("voiceschanged", pick);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", pick);
   }, []);
 
-  const submit = async (e: React.FormEvent) => {
+  const submitScore = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (scoreA < 0 || scoreB < 0 || scoreA === scoreB) return;
     const winner = scoreA > scoreB ? "Team A" : "Team B";
     const ok = await confirm(
       `Record final score ${scoreA} – ${scoreB}?\n${winner} wins. This cannot be undone.`,
-      {
-        title: "Record result",
-        confirmLabel: "Record result",
-      }
+      { title: "Record result", confirmLabel: "Record result" }
     );
     if (!ok) return;
-    onRecord(scoreA, scoreB);
+    onRecord({ scoreA, scoreB, winner: scoreA > scoreB ? "A" : "B" });
   };
 
-  const bump = (team: ServingTeam, delta: number) => {
-    onBumpScore(team, delta);
+  const declareWinner = async (winner: "A" | "B" | "tie") => {
+    const nameA = pending ? `${nameOf(players, pending.teamA[0])} & ${nameOf(players, pending.teamA[1])}` : "Team A";
+    const nameB = pending ? `${nameOf(players, pending.teamB[0])} & ${nameOf(players, pending.teamB[1])}` : "Team B";
+    const label = winner === "tie" ? "Tie game" : winner === "A" ? `${nameA} wins` : `${nameB} wins`;
+    const ok = await confirm(`${label}. This cannot be undone.`, {
+      title: "Declare result",
+      confirmLabel: "Confirm",
+    });
+    if (!ok) return;
+    onRecord({ winner });
   };
+
+  const bump = (team: ServingTeam, delta: number) => onBumpScore(team, delta);
 
   const servingScore = serving === "A" ? scoreA : scoreB;
   const receivingScore = serving === "A" ? scoreB : scoreA;
   const call = `${servingScore} – ${receivingScore} – ${serverNumber}`;
 
-  const buildUtter = (
-    text: string,
-    opts: { rate?: number; pitch?: number; volume?: number } = {}
-  ) => {
+  const buildUtter = (text: string, opts: { rate?: number; pitch?: number; volume?: number } = {}) => {
     const utter = new SpeechSynthesisUtterance(text);
-    if (voiceRef.current) {
-      utter.voice = voiceRef.current;
-      utter.lang = voiceRef.current.lang;
-    }
+    if (voiceRef.current) { utter.voice = voiceRef.current; utter.lang = voiceRef.current.lang; }
     utter.rate = opts.rate ?? 0.95;
     utter.pitch = opts.pitch ?? 1.05;
     utter.volume = opts.volume ?? 1;
@@ -235,17 +233,13 @@ export function CurrentMatch({
     window.speechSynthesis.speak(buildUtter(text));
   };
 
-  const speakSequence = (
-    parts: { text: string; rate?: number; pitch?: number; volume?: number }[]
-  ) => {
+  const speakSequence = (parts: { text: string; rate?: number; pitch?: number; volume?: number }[]) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     for (const p of parts) window.speechSynthesis.speak(buildUtter(p.text, p));
   };
 
-  const announce = () => {
-    speak(`${servingScore}, ${receivingScore}, ${serverNumber}`);
-  };
+  const announce = () => speak(`${servingScore}, ${receivingScore}, ${serverNumber}`);
 
   const announcePlayers = () => {
     if (!pending) return;
@@ -293,7 +287,7 @@ export function CurrentMatch({
           )}
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-4">
           <div className="grid grid-cols-[1fr_auto_1fr] gap-2 sm:gap-3 items-stretch min-w-0">
             <TeamScore
               label="Team A"
@@ -319,15 +313,12 @@ export function CurrentMatch({
               onSetServer={(n) => onSetServer("B", n)}
             />
           </div>
+
           <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-2">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
               <div>
-                <p className="text-[10px] uppercase tracking-wide text-muted">
-                  Announcer
-                </p>
-                <p className="text-2xl font-bold text-foreground tabular-nums">
-                  {call}
-                </p>
+                <p className="text-[10px] uppercase tracking-wide text-muted">Announcer</p>
+                <p className="text-2xl font-bold text-foreground tabular-nums">{call}</p>
               </div>
               {!readOnly && (
                 <button
@@ -349,24 +340,93 @@ export function CurrentMatch({
               </button>
             )}
           </div>
+
           {!readOnly && (
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="flex-1 rounded-lg bg-accent text-background px-3 py-2 text-sm font-semibold hover:bg-muted transition-colors"
-              >
-                Record Result
-              </button>
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded-lg px-3 py-2 text-sm border border-border text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-              >
-                Cancel
-              </button>
+            <div className="space-y-3">
+              {/* Mode toggle */}
+              <div className="flex rounded-lg border border-border overflow-hidden text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => onSetResultMode("score")}
+                  className={`flex-1 py-2 transition-colors ${
+                    resultMode === "score"
+                      ? "bg-accent text-background"
+                      : "text-muted hover:bg-accent/10"
+                  }`}
+                >
+                  Record score
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSetResultMode("winner")}
+                  className={`flex-1 py-2 border-l border-border transition-colors ${
+                    resultMode === "winner"
+                      ? "bg-accent text-background"
+                      : "text-muted hover:bg-accent/10"
+                  }`}
+                >
+                  Declare winner
+                </button>
+              </div>
+
+              {resultMode === "score" ? (
+                <form onSubmit={submitScore} className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={scoreA === scoreB}
+                    className="flex-1 rounded-lg bg-accent text-background px-3 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+                  >
+                    Record Result
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="rounded-lg px-3 py-2 text-sm border border-border text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => declareWinner("A")}
+                      className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors text-left"
+                    >
+                      <span className="text-[10px] text-muted uppercase tracking-wide block mb-0.5">Team A wins</span>
+                      <span className="truncate block">{nameOf(players, pending.teamA[0])} & {nameOf(players, pending.teamA[1])}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => declareWinner("B")}
+                      className="rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors text-left"
+                    >
+                      <span className="text-[10px] text-muted uppercase tracking-wide block mb-0.5">Team B wins</span>
+                      <span className="truncate block">{nameOf(players, pending.teamB[0])} & {nameOf(players, pending.teamB[1])}</span>
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => declareWinner("tie")}
+                      className="flex-1 rounded-lg border border-border text-muted px-3 py-2 text-sm font-semibold hover:bg-accent/10 hover:border-accent transition-colors"
+                    >
+                      Tie
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCancel}
+                      className="rounded-lg px-3 py-2 text-sm border border-border text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </form>
+        </div>
       )}
     </section>
   );

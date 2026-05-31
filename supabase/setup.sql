@@ -134,8 +134,14 @@ alter table public.admins
 alter table public.admins
   add column if not exists email text;
 alter table public.locations
-  add column if not exists latitude  double precision,
-  add column if not exists longitude double precision;
+  add column if not exists latitude     double precision,
+  add column if not exists longitude    double precision,
+  add column if not exists logo_url     text,
+  add column if not exists accent_color text;
+
+insert into storage.buckets (id, name, public)
+values ('location-logos', 'location-logos', true)
+on conflict (id) do nothing;
 
 alter table public.admins enable row level security;
 -- No select policies: all access goes through service_role RPCs.

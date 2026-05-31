@@ -2,11 +2,11 @@
 
 import { use, useEffect, useRef } from "react";
 import Link from "next/link";
-import { CurrentMatch } from "@/components/CurrentMatch";
+import { CurrentMatch, MatchResult } from "@/components/CurrentMatch";
 import { EditLock } from "@/components/EditLock";
 import { useNotifications } from "@/components/Notifications";
 import { useSharedState } from "@/lib/sharedState";
-import { generateMatch, isCoverageComplete } from "@/lib/rotation";
+import { generateMatch, advanceQueue } from "@/lib/rotation";
 import { activeCourtMatches, fillQueue } from "@/lib/sessionHelpers";
 import {
   CompletedMatch,
@@ -45,10 +45,13 @@ export default function CourtScoringPage({
   }, [lastError, notify]);
 
   const match = state.courts[courtIndex] ?? null;
-  const skillSeparation = state.skillSeparation === true;
+  const resultMode = state.resultMode ?? "score";
 
-  const skillMode =
-    hydrated && isCoverageComplete(state.players, state.history, skillSeparation);
+  const handleSetResultMode = (mode: import("@/lib/types").ResultMode) => {
+    setState((s) => ({ ...s, resultMode: mode }));
+  };
+
+  const skillMode = state.skillBased === true;
   const canGenerate =
     state.players.filter((p) => p.active !== false).length >= 4 && !match;
 
@@ -56,6 +59,7 @@ export default function CourtScoringPage({
     let generated = false;
     setState((s) => {
       if (s.courts[courtIndex]) return s;
+      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
       const courts = [...s.courts];
       let upcoming = [...s.upcoming];
       if (upcoming.length > 0) {
@@ -63,11 +67,13 @@ export default function CourtScoringPage({
         upcoming = upcoming.slice(1);
       } else {
         const fresh = generateMatch(
+          queue,
           s.players,
           s.history,
           activeCourtMatches(courts),
-          upcoming,
-          s.skillSeparation === true
+          [],
+          s.skillBased === true,
+          s.lockedPairs ?? []
         );
         if (!fresh) return s;
         courts[courtIndex] = fresh;
@@ -76,30 +82,29 @@ export default function CourtScoringPage({
       return {
         ...s,
         courts,
-        upcoming: fillQueue(
-          s.players,
-          s.history,
-          courts,
-          upcoming,
-          s.skillSeparation === true
-        ),
+        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? []),
       };
     });
     if (generated) notify(`New match assigned to Court ${courtIndex + 1}`, "info");
   };
 
-  const handleRecord = (scoreA: number, scoreB: number) => {
+  const handleRecord = (result: MatchResult) => {
     let recorded = false;
     setState((s) => {
       const m = s.courts[courtIndex];
       if (!m) return s;
       const completed: CompletedMatch = {
         ...m,
-        scoreA,
-        scoreB,
+        scoreA: result.scoreA,
+        scoreB: result.scoreB,
+        winner: result.winner,
         completedAt: Date.now(),
       };
       const history = [...s.history, completed];
+      const queue = advanceQueue(
+        s.queue?.length ? s.queue : s.players.map((p) => p.id),
+        [...m.teamA, ...m.teamB]
+      );
       const courts = [...s.courts];
       let upcoming = [...s.upcoming];
       if (upcoming.length > 0) {
@@ -112,39 +117,35 @@ export default function CourtScoringPage({
       return {
         ...s,
         history,
+        queue,
         courts,
-        upcoming: fillQueue(
-          s.players,
-          history,
-          courts,
-          upcoming,
-          s.skillSeparation === true
-        ),
+        upcoming: fillQueue(queue, s.players, history, courts, s.skillBased === true, s.lockedPairs ?? []),
       };
     });
     if (recorded) {
-      const winner = scoreA > scoreB ? "Team A" : "Team B";
-      notify(
-        `Court ${courtIndex + 1}: ${winner} wins ${scoreA}-${scoreB}`,
-        "success"
-      );
+      const label =
+        result.winner === "tie"
+          ? "Tie game"
+          : result.winner === "A"
+          ? "Team A wins"
+          : "Team B wins";
+      const score =
+        result.scoreA !== undefined && result.scoreB !== undefined
+          ? ` ${result.scoreA}-${result.scoreB}`
+          : "";
+      notify(`Court ${courtIndex + 1}: ${label}${score}`, "success");
     }
   };
 
   const handleCancel = () => {
     setState((s) => {
+      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
       const courts = [...s.courts];
       courts[courtIndex] = null;
       return {
         ...s,
         courts,
-        upcoming: fillQueue(
-          s.players,
-          s.history,
-          courts,
-          s.upcoming,
-          s.skillSeparation === true
-        ),
+        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? []),
       };
     });
     notify(`Court ${courtIndex + 1} cleared`, "warning");
@@ -239,7 +240,6 @@ export default function CourtScoringPage({
       </header>
 
       <CurrentMatch
-        label={`Court ${courtIndex + 1}`}
         players={state.players}
         pending={match}
         canGenerate={canGenerate}
@@ -250,6 +250,8 @@ export default function CourtScoringPage({
         onCancel={handleCancel}
         onSetServer={handleSetServer}
         onBumpScore={handleBumpScore}
+        resultMode={resultMode}
+        onSetResultMode={handleSetResultMode}
       />
     </main>
   );

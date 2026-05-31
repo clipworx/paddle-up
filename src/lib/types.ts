@@ -32,6 +32,7 @@ export type Player = {
   name: string;
   skill: SkillLevel;
   active?: boolean;
+  joinedAt?: number;
 };
 
 export const isActive = (p: Player): boolean => p.active !== false;
@@ -53,10 +54,13 @@ export type PendingMatch = {
 };
 
 export type CompletedMatch = PendingMatch & {
-  scoreA: number;
-  scoreB: number;
+  scoreA?: number;
+  scoreB?: number;
+  winner: "A" | "B" | "tie";
   completedAt: number;
 };
+
+export type ResultMode = "score" | "winner";
 
 export type AppState = {
   players: Player[];
@@ -64,7 +68,11 @@ export type AppState = {
   courts: (PendingMatch | null)[];
   upcoming: PendingMatch[];
   history: CompletedMatch[];
+  queue: string[];
   skillSeparation?: boolean;
+  skillBased?: boolean;
+  lockedPairs?: [string, string][];
+  resultMode?: ResultMode;
 };
 
 export const MAX_COURTS = 4;
@@ -95,6 +103,12 @@ export type Location = {
   // Map
   latitude: number | null;
   longitude: number | null;
+  // Branding
+  logo_url: string | null;
+  accent_color: string | null;
+  // Subscription
+  subscription_due_date: string | null;   // YYYY-MM-DD, null = no subscription enforced
+  subscription_grace_days: number;         // days after due before deactivation (default 7)
 };
 
 export type Court = {
@@ -105,7 +119,7 @@ export type Court = {
   location_id: string;
 };
 
-export type BookingStatus = "confirmed" | "cancelled" | "pending_payment";
+export type BookingStatus = "confirmed" | "cancelled" | "pending_payment" | "refunded";
 
 export type Booking = {
   id: string;
@@ -114,10 +128,12 @@ export type Booking = {
   start_time: string; // HH:MM:SS
   end_time: string;   // HH:MM:SS
   booker_name: string;
-  booker_email: string;
+  booker_phone: string;
+  booker_email: string | null;
   player_count: number;
   notes: string | null;
   status: BookingStatus;
+  refund_reason: string | null;
   created_at: string;
 };
 
@@ -149,5 +165,6 @@ export const INITIAL_STATE: AppState = {
   courts: [null],
   upcoming: [],
   history: [],
+  queue: [],
   skillSeparation: false,
 };

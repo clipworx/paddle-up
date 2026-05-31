@@ -7,7 +7,7 @@ export async function GET() {
   // Fetch active locations with their active court count
   const { data, error } = await supabase
     .from("locations")
-    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, courts(id)")
+    .select("id, name, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, logo_url, accent_color, subscription_due_date, subscription_grace_days, courts(id)")
     .eq("is_active", true)
     .order("name");
 
@@ -15,7 +15,15 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const locations = (data ?? []).map((loc) => ({
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const locations = (data ?? []).filter((loc) => {
+    if (!loc.subscription_due_date) return true;
+    const graceEnd = new Date(loc.subscription_due_date);
+    graceEnd.setDate(graceEnd.getDate() + (loc.subscription_grace_days ?? 7));
+    return today <= graceEnd;
+  }).map((loc) => ({
     id: loc.id,
     name: loc.name,
     address: loc.address,
@@ -34,6 +42,10 @@ export async function GET() {
     payment_account_number: loc.payment_account_number ?? null,
     latitude: loc.latitude ?? null,
     longitude: loc.longitude ?? null,
+    logo_url: loc.logo_url ?? null,
+    accent_color: loc.accent_color ?? null,
+    subscription_due_date: loc.subscription_due_date ?? null,
+    subscription_grace_days: loc.subscription_grace_days ?? 7,
     court_count: Array.isArray(loc.courts) ? loc.courts.length : 0,
   }));
 

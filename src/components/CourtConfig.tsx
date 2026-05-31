@@ -6,8 +6,10 @@ type Props = {
   courtCount: number;
   readOnly?: boolean;
   skillSeparation: boolean;
+  skillBased: boolean;
   onChange: (n: number) => void;
   onToggleSkillSeparation: (next: boolean) => void;
+  onToggleSkillBased: (next: boolean) => void;
 };
 
 const MIN = 1;
@@ -17,11 +19,13 @@ export function CourtConfig({
   courtCount,
   readOnly,
   skillSeparation,
+  skillBased,
   onChange,
   onToggleSkillSeparation,
+  onToggleSkillBased,
 }: Props) {
   return (
-    <section className="rounded-lg border border-border bg-background/60 p-4 shadow-sm space-y-4">
+    <section className="rounded-xl border border-border bg-background/60 p-4 shadow-sm space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-3">Courts</h2>
         <div className="flex items-center gap-3">
@@ -55,7 +59,38 @@ export function CourtConfig({
         </p>
       </div>
 
-      <div className="pt-4 border-t border-border">
+      <div className="pt-4 border-t border-border space-y-4">
+        {/* Skill-based matching */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">
+              Skill-based matching
+            </h3>
+            <p className="text-xs text-muted mt-0.5">
+              {skillBased
+                ? "Always groups players of similar skill levels together."
+                : "Players are matched by rotation fairness alone."}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={skillBased}
+            disabled={readOnly}
+            onClick={() => onToggleSkillBased(!skillBased)}
+            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${
+              skillBased ? "bg-accent" : "bg-border"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-5 h-5 rounded-full bg-background shadow transition-transform ${
+                skillBased ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Skill separation */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-foreground">

@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   const supabase = getServerSupabase();
   const { data, error } = await supabase
     .from("bookings")
-    .select("id, court_id, date, start_time, end_time, booker_name, booker_email, player_count, notes, status, created_at")
+    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, created_at")
     .eq("date", date)
     .in("status", ["confirmed", "pending_payment"])
     .order("start_time");
@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     start_time?: unknown;
     end_time?: unknown;
     booker_name?: unknown;
+    booker_phone?: unknown;
     booker_email?: unknown;
     player_count?: unknown;
     notes?: unknown;
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
   const start_time = typeof body.start_time === "string" ? body.start_time.trim() : "";
   const end_time = typeof body.end_time === "string" ? body.end_time.trim() : "";
   const booker_name = typeof body.booker_name === "string" ? body.booker_name.trim() : "";
-  const booker_email = typeof body.booker_email === "string" ? body.booker_email.trim().toLowerCase() : "";
+  const booker_phone = typeof body.booker_phone === "string" ? body.booker_phone.trim() : "";
+  const booker_email = typeof body.booker_email === "string" ? body.booker_email.trim().toLowerCase() || null : null;
   const player_count = typeof body.player_count === "number" ? body.player_count : 4;
   const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
 
@@ -55,7 +57,10 @@ export async function POST(req: Request) {
   if (!booker_name) {
     return NextResponse.json({ error: "name_required" }, { status: 400 });
   }
-  if (!booker_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
+  if (!booker_phone) {
+    return NextResponse.json({ error: "phone_required" }, { status: 400 });
+  }
+  if (booker_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
     return NextResponse.json({ error: "valid_email_required" }, { status: 400 });
   }
   if (player_count < 2 || player_count > 4) {
@@ -67,26 +72,43 @@ export async function POST(req: Request) {
 
   const supabase = getServerSupabase();
 
-  // Fetch location info + court name via the court's location
+  // Fetch court + location info; verify location is active and subscription is valid
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, locations(name, payment_qr_url, payment_account_name, payment_account_number)")
+    .select("name, location_id, is_active, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days)")
     .eq("id", court_id)
     .single();
 
   const loc = (courtRow?.locations as unknown) as {
     name: string;
+    is_active: boolean;
     payment_qr_url: string | null;
     payment_account_name: string | null;
     payment_account_number: string | null;
+    subscription_due_date: string | null;
+    subscription_grace_days: number;
   } | null;
+
+  if (!courtRow?.is_active || !loc?.is_active) {
+    return NextResponse.json({ error: "location_inactive" }, { status: 409 });
+  }
+
+  if (loc.subscription_due_date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const graceEnd = new Date(loc.subscription_due_date);
+    graceEnd.setDate(graceEnd.getDate() + (loc.subscription_grace_days ?? 7));
+    if (today > graceEnd) {
+      return NextResponse.json({ error: "location_subscription_expired" }, { status: 409 });
+    }
+  }
 
   const requiresPayment = !!loc?.payment_qr_url;
   const status = requiresPayment ? "pending_payment" : "confirmed";
 
   const { data, error } = await supabase
     .from("bookings")
-    .insert({ court_id, date, start_time, end_time, booker_name, booker_email, player_count, notes, status })
+    .insert({ court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status })
     .select("id")
     .single();
 
@@ -118,7 +140,7 @@ export async function POST(req: Request) {
               startTime: start_time,
               endTime: end_time,
               bookerName: booker_name,
-              bookerEmail: booker_email,
+              bookerEmail: booker_email ?? "",
               playerCount: player_count,
               notes,
               status: status as "confirmed" | "pending_payment",

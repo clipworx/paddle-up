@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AdminNav } from "@/components/AdminNav";
-import type { Booking, Court } from "@/lib/types";
+import type { Booking, BookingStatus } from "@/lib/types";
 
-type BookingWithCourt = Booking & { court_name?: string };
+type BookingWithCourt = Booking & { court_name?: string | null };
 
 function formatDate(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -29,29 +29,213 @@ function fmtTime(t: string): string {
   return `${hour}:${String(m).padStart(2, "0")} ${period}`;
 }
 
+function fmtDatetime(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+const STATUS_STYLES: Record<BookingStatus, string> = {
+  confirmed: "bg-green-100 text-green-700",
+  pending_payment: "bg-yellow-100 text-yellow-700",
+  cancelled: "bg-gray-100 text-gray-500",
+  refunded: "bg-blue-100 text-blue-600",
+};
+
+const STATUS_LABELS: Record<BookingStatus, string> = {
+  confirmed: "Confirmed",
+  pending_payment: "Pending",
+  cancelled: "Cancelled",
+  refunded: "Refunded",
+};
+
+function StatusBadge({ status }: { status: BookingStatus }) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest ${STATUS_STYLES[status]}`}>
+      {STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex gap-3">
+      <span className="w-24 shrink-0 text-xs text-muted font-semibold uppercase tracking-wide pt-0.5">{label}</span>
+      <span className={`text-sm text-foreground break-all ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+function RefundDialog({ onConfirm, onClose }: {
+  onConfirm: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl border border-border bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-border px-5 py-4">
+          <h3 className="text-base font-bold text-foreground">Mark as Refunded</h3>
+          <p className="text-xs text-muted mt-1">Provide a reason for the refund (optional).</p>
+        </div>
+        <div className="px-5 py-4">
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Court was unavailable, player requested cancellation…"
+            rows={3}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent resize-none"
+          />
+        </div>
+        <div className="flex gap-2 border-t border-border px-5 py-4">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted hover:bg-accent/5 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(reason)}
+            className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+          >
+            Mark Refunded
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, confirming, cancelling, refunding, isPast }: {
+  booking: BookingWithCourt;
+  onClose: () => void;
+  onConfirm: (id: string) => void;
+  onCancel: (id: string) => void;
+  onRefund: (id: string) => void;
+  confirming: boolean;
+  cancelling: boolean;
+  refunding: boolean;
+  isPast: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-border bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-foreground">Booking Details</h2>
+            <StatusBadge status={booking.status} />
+          </div>
+          <button onClick={onClose} className="text-muted hover:text-foreground text-lg leading-none">×</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <Row label="Court" value={booking.court_name ?? booking.court_id} />
+          <Row label="Date" value={displayDate(booking.date)} />
+          <Row label="Time" value={`${fmtTime(booking.start_time)} – ${fmtTime(booking.end_time)}`} />
+          <div className="border-t border-border pt-3 space-y-3">
+            <Row label="Booker" value={booking.booker_name} />
+            <Row label="Phone" value={booking.booker_phone || "—"} />
+            <Row label="Email" value={booking.booker_email ?? "—"} />
+          </div>
+          <div className="border-t border-border pt-3 space-y-3">
+            <Row label="Players" value={String(booking.player_count)} />
+            <Row label="Notes" value={booking.notes ?? "—"} />
+          </div>
+          {booking.status === "refunded" && (
+            <div className="border-t border-border pt-3">
+              <Row label="Refund reason" value={booking.refund_reason ?? "No reason provided"} />
+            </div>
+          )}
+          <div className="border-t border-border pt-3 space-y-3">
+            <Row label="Booking ID" value={booking.id} mono />
+            <Row label="Created" value={fmtDatetime(booking.created_at)} />
+          </div>
+        </div>
+
+        {booking.status !== "cancelled" && booking.status !== "refunded" && (
+          <div className="flex gap-2 border-t border-border px-5 py-4">
+            {booking.status === "pending_payment" && !isPast && (
+              <button
+                onClick={() => onConfirm(booking.id)}
+                disabled={confirming}
+                className="flex-1 rounded-lg border border-green-400 bg-green-50 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
+              >
+                {confirming ? "Confirming…" : "Confirm Payment"}
+              </button>
+            )}
+            {!isPast && (
+              <button
+                onClick={() => onCancel(booking.id)}
+                disabled={cancelling}
+                className="flex-1 rounded-lg border border-accent/50 bg-accent/5 px-3 py-2 text-sm font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+              >
+                {cancelling ? "Cancelling…" : "Cancel Booking"}
+              </button>
+            )}
+            {isPast && (
+              <button
+                onClick={() => onRefund(booking.id)}
+                disabled={refunding}
+                className="flex-1 rounded-lg border border-blue-400 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
+              >
+                {refunding ? "Processing…" : "Mark as Refunded"}
+              </button>
+            )}
+          </div>
+        )}
+        {booking.status === "cancelled" && isPast && (
+          <div className="flex gap-2 border-t border-border px-5 py-4">
+            <button
+              onClick={() => onRefund(booking.id)}
+              disabled={refunding}
+              className="flex-1 rounded-lg border border-blue-400 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
+            >
+              {refunding ? "Processing…" : "Mark as Refunded"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminBookingsPage() {
   const router = useRouter();
   const today = formatDate(new Date());
   const [date, setDate] = useState(today);
-  const [courts, setCourts] = useState<Court[]>([]);
   const [bookings, setBookings] = useState<BookingWithCourt[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<BookingWithCourt | null>(null);
+  const [refundTarget, setRefundTarget] = useState<string | null>(null);
 
-  const loadCourts = useCallback(async () => {
-    const res = await fetch("/api/courts");
-    if (res.status === 401) { router.replace("/admin/login"); return; }
-    const json = await res.json();
-    setCourts(json.courts ?? []);
-  }, [router]);
+  const isPast = date < today;
 
   const loadBookings = useCallback(async (d: string) => {
     setError(null);
     setBookings(null);
     try {
-      const res = await fetch(`/api/bookings?date=${d}`);
-      if (res.status === 401) { router.replace("/admin/login"); return; }
+      const res = await fetch(`/api/admin/bookings?date=${d}`);
+      if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load bookings");
       setBookings(json.bookings ?? []);
@@ -60,24 +244,26 @@ export default function AdminBookingsPage() {
     }
   }, [router]);
 
-  useEffect(() => { loadCourts(); }, [loadCourts]);
   useEffect(() => { loadBookings(date); }, [date, loadBookings]);
 
-  function courtName(courtId: string): string {
-    return courts.find((c) => c.id === courtId)?.name ?? courtId;
-  }
+  // Keep selected booking in sync after reload
+  useEffect(() => {
+    if (selected && bookings) {
+      const updated = bookings.find((b) => b.id === selected.id);
+      setSelected(updated ?? null);
+    }
+  }, [bookings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onCancel(id: string) {
     if (!confirm("Cancel this booking? The player will not be notified automatically.")) return;
     setCancellingId(id);
     try {
-      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      if (res.status === 401) { router.replace("/admin/login"); return; }
+      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Cancel failed");
       await loadBookings(date);
+      setSelected(null);
     } catch (err) {
       alert((err as Error).message);
     } finally {
@@ -89,14 +275,38 @@ export default function AdminBookingsPage() {
     setConfirmingId(id);
     try {
       const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}/confirm`, { method: "POST" });
-      if (res.status === 401) { router.replace("/admin/login"); return; }
+      if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Confirm failed");
       await loadBookings(date);
+      setSelected(null);
     } catch (err) {
       alert((err as Error).message);
     } finally {
       setConfirmingId(null);
+    }
+  }
+
+  async function onRefundConfirm(reason: string) {
+    if (!refundTarget) return;
+    const id = refundTarget;
+    setRefundTarget(null);
+    setRefundingId(id);
+    try {
+      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Refund failed");
+      await loadBookings(date);
+      setSelected(null);
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setRefundingId(null);
     }
   }
 
@@ -120,135 +330,178 @@ export default function AdminBookingsPage() {
     <>
       <AdminNav onLogout={onLogout} />
       <main className="mx-auto max-w-5xl w-full px-4 py-10 space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Bookings</h1>
-        <Link
-          href="/book"
-          target="_blank"
-          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-        >
-          Booking page ↗
-        </Link>
-      </div>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-foreground">Bookings</h1>
+          <Link
+            href="/book"
+            target="_blank"
+            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+          >
+            Booking page ↗
+          </Link>
+        </div>
 
-      {/* Date picker */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={prevDay}
-          className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-        >
-          ‹
-        </button>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
-        />
-        <span className="text-sm text-muted hidden sm:block">
-          {displayDate(date)}
-        </span>
-        {date === today && (
-          <span className="rounded-full bg-accent/15 text-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-            Today
-          </span>
-        )}
-        <button
-          onClick={nextDay}
-          className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-        >
-          ›
-        </button>
-        <button
-          onClick={() => loadBookings(date)}
-          className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors ml-auto"
-        >
-          Refresh
-        </button>
-      </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={prevDay}
+            className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+          >
+            ‹
+          </button>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
+          />
+          <span className="text-sm text-muted hidden sm:block">{displayDate(date)}</span>
+          {date === today && (
+            <span className="rounded-full bg-accent/15 text-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+              Today
+            </span>
+          )}
+          {isPast && (
+            <span className="rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+              Past
+            </span>
+          )}
+          <button
+            onClick={nextDay}
+            className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+          >
+            ›
+          </button>
+          <button
+            onClick={() => loadBookings(date)}
+            className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors ml-auto"
+          >
+            Refresh
+          </button>
+        </div>
 
-      {error && (
-        <p className="rounded-lg border border-accent/40 bg-accent/5 px-4 py-3 text-sm text-accent font-semibold">
-          {error}
-        </p>
-      )}
-
-      {bookings === null && !error && (
-        <p className="text-sm text-muted">Loading…</p>
-      )}
-
-      {bookings !== null && bookings.length === 0 && (
-        <div className="rounded-xl border border-border bg-background/60 p-8 text-center shadow-sm">
-          <p className="text-sm text-muted">
-            No bookings for {displayDate(date)}.
+        {error && (
+          <p className="rounded-lg border border-accent/40 bg-accent/5 px-4 py-3 text-sm text-accent font-semibold">
+            {error}
           </p>
-        </div>
+        )}
+
+        {bookings === null && !error && (
+          <p className="text-sm text-muted">Loading…</p>
+        )}
+
+        {bookings !== null && bookings.length === 0 && (
+          <div className="rounded-xl border border-border bg-background/60 p-8 text-center shadow-sm">
+            <p className="text-sm text-muted">No bookings for {displayDate(date)}.</p>
+          </div>
+        )}
+
+        {bookings !== null && bookings.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-border bg-background/60 shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-surface">
+                  <tr className="text-left">
+                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Court</th>
+                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Time</th>
+                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Booker</th>
+                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Status</th>
+                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.map((b, i) => (
+                    <tr
+                      key={b.id}
+                      className={[
+                        i === 0 ? "" : "border-t border-border",
+                        b.status === "cancelled" || b.status === "refunded" ? "opacity-50" : "hover:bg-accent/5",
+                        "transition-colors",
+                      ].join(" ")}
+                    >
+                      <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">
+                        {b.court_name ?? b.court_id}
+                      </td>
+                      <td className="px-4 py-3 text-foreground whitespace-nowrap">
+                        {fmtTime(b.start_time)} – {fmtTime(b.end_time)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-foreground">{b.booker_name}</p>
+                        <p className="text-xs text-muted">{b.booker_phone || "—"}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <StatusBadge status={b.status} />
+                          {b.status === "refunded" && b.refund_reason && (
+                            <span className="text-[11px] text-muted leading-snug max-w-[160px]">{b.refund_reason}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => setSelected(b)}
+                            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                          >
+                            View
+                          </button>
+                          {b.status === "pending_payment" && !isPast && (
+                            <button
+                              onClick={() => onConfirm(b.id)}
+                              disabled={confirmingId === b.id}
+                              className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
+                            >
+                              {confirmingId === b.id ? "…" : "Confirm"}
+                            </button>
+                          )}
+                          {b.status !== "cancelled" && b.status !== "refunded" && !isPast && (
+                            <button
+                              onClick={() => onCancel(b.id)}
+                              disabled={cancellingId === b.id}
+                              className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+                            >
+                              {cancellingId === b.id ? "…" : "Cancel"}
+                            </button>
+                          )}
+                          {b.status !== "refunded" && isPast && (
+                            <button
+                              onClick={() => setRefundTarget(b.id)}
+                              disabled={refundingId === b.id}
+                              className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
+                            >
+                              {refundingId === b.id ? "…" : "Refund"}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {selected && (
+        <DetailModal
+          booking={selected}
+          onClose={() => setSelected(null)}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+          onRefund={(id) => { setSelected(null); setRefundTarget(id); }}
+          confirming={confirmingId === selected.id}
+          cancelling={cancellingId === selected.id}
+          refunding={refundingId === selected.id}
+          isPast={isPast}
+        />
       )}
 
-      {bookings !== null && bookings.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-border bg-background/60 shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-surface">
-                <tr className="text-left">
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Court</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Time</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Booker</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Email</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Players</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Notes</th>
-                  <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookings.map((b, i) => (
-                  <tr
-                    key={b.id}
-                    className={`${i === 0 ? "" : "border-t border-border"} ${b.status === "pending_payment" ? "bg-yellow-50/60" : "hover:bg-accent/5"} transition-colors`}
-                  >
-                    <td className="px-4 py-3 font-semibold text-foreground">
-                      {courtName(b.court_id)}
-                      {b.status === "pending_payment" && (
-                        <span className="ml-2 rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-                          Pending
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-foreground whitespace-nowrap">
-                      {fmtTime(b.start_time)} – {fmtTime(b.end_time)}
-                    </td>
-                    <td className="px-4 py-3 text-foreground">{b.booker_name}</td>
-                    <td className="px-4 py-3 text-muted">{b.booker_email}</td>
-                    <td className="px-4 py-3 text-foreground text-center">{b.player_count}</td>
-                    <td className="px-4 py-3 text-muted max-w-45 truncate">{b.notes ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        {b.status === "pending_payment" && (
-                          <button
-                            onClick={() => onConfirm(b.id)}
-                            disabled={confirmingId === b.id}
-                            className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
-                          >
-                            {confirmingId === b.id ? "…" : "Confirm"}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => onCancel(b.id)}
-                          disabled={cancellingId === b.id}
-                          className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
-                        >
-                          {cancellingId === b.id ? "…" : "Cancel"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {refundTarget && (
+        <RefundDialog
+          onConfirm={onRefundConfirm}
+          onClose={() => setRefundTarget(null)}
+        />
       )}
-    </main>
     </>
   );
 }

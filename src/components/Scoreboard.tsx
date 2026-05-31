@@ -38,7 +38,7 @@ export function Scoreboard({ players, history }: Props) {
   const pageItems = reversed.slice(pageStart, pageStart + PAGE_SIZE);
 
   return (
-    <section className="rounded-lg border border-border bg-background/60 p-4 shadow-sm">
+    <section className="rounded-xl border border-border bg-background/60 p-4 shadow-sm">
       <h2 className="text-lg font-semibold text-foreground mb-3">Scoreboard</h2>
 
       {players.length === 0 ? (
@@ -91,7 +91,6 @@ export function Scoreboard({ players, history }: Props) {
           </h3>
           <ul className="space-y-1.5 text-sm max-h-80 overflow-y-auto">
             {pageItems.map((m, idx) => {
-              const aWon = m.scoreA > m.scoreB;
               const matchNumber = history.length - pageStart - idx;
               return (
                 <li
@@ -102,14 +101,20 @@ export function Scoreboard({ players, history }: Props) {
                     <span className="text-muted text-xs tabular-nums">
                       #{matchNumber}
                     </span>
-                    <span className="tabular-nums font-semibold text-foreground text-base">
-                      {m.scoreA} – {m.scoreB}
-                    </span>
+                    {m.scoreA !== undefined && m.scoreB !== undefined ? (
+                      <span className="tabular-nums font-semibold text-foreground text-base">
+                        {m.scoreA} – {m.scoreB}
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold text-accent uppercase tracking-wide">
+                        {m.winner === "tie" ? "Tie" : m.winner === "A" ? "Team A won" : "Team B won"}
+                      </span>
+                    )}
                   </div>
                   <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center text-xs">
                     <span
                       className={`truncate ${
-                        aWon ? "font-semibold text-foreground" : "text-muted"
+                        m.winner === "A" ? "font-semibold text-foreground" : "text-muted"
                       }`}
                     >
                       {nameOf(players, m.teamA[0])} &{" "}
@@ -118,7 +123,7 @@ export function Scoreboard({ players, history }: Props) {
                     <span className="text-muted">vs</span>
                     <span
                       className={`truncate text-right ${
-                        !aWon ? "font-semibold text-foreground" : "text-muted"
+                        m.winner === "B" ? "font-semibold text-foreground" : "text-muted"
                       }`}
                     >
                       {nameOf(players, m.teamB[0])} &{" "}
