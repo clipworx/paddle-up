@@ -444,6 +444,28 @@ export default function BookPage() {
   // Visible slot indices (filtered to operating hours)
   const visibleSlotIndices = Array.from({ length: closeH - openH }, (_, k) => openH + k);
 
+  // Precompute booking spans so consecutive hours from the same booking merge into one cell
+  type SlotSpan = { booking: Booking; rowSpan: number; isStart: boolean };
+  const bookingSpanMap = new Map<string, Map<number, SlotSpan>>();
+  courts.forEach((court) => {
+    const slotMap = new Map<number, SlotSpan>();
+    bookings.forEach((b) => {
+      if (b.court_id !== court.id) return;
+      if (b.status !== "confirmed" && b.status !== "pending_payment") return;
+      const bStart = b.start_time.slice(0, 5);
+      const bEnd = normEnd(b.end_time.slice(0, 5));
+      const covered = visibleSlotIndices.filter((idx) => {
+        const s = TIME_SLOTS[idx];
+        return s.start < bEnd && normEnd(s.end) > bStart;
+      });
+      if (!covered.length) return;
+      covered.forEach((idx, i) =>
+        slotMap.set(idx, { booking: b, rowSpan: covered.length, isStart: i === 0 })
+      );
+    });
+    bookingSpanMap.set(court.id, slotMap);
+  });
+
   // Derived values for the modal
   const modalCourt = courts.find((c) => c.id === form.court_id);
   const validMax = maxEndIdx(form.court_id, form.startIdx);
@@ -480,7 +502,7 @@ export default function BookPage() {
             {selectedLocation?.latitude && selectedLocation?.longitude && (
               <button
                 onClick={() => setShowMap(true)}
-                className="hidden sm:flex items-center gap-1 text-sm font-semibold text-muted hover:text-foreground transition-colors"
+                className="flex items-center gap-1 text-sm font-semibold text-muted hover:text-foreground transition-colors"
               >
                 <MapPin size={13} />
                 Map
@@ -824,34 +846,39 @@ export default function BookPage() {
                             )}
                           </td>
                           {courts.map((court) => {
-                            const slotEnd = normEnd(slot.end);
-                            const matchingBooking = bookings.find((b) => {
-                              if (b.court_id !== court.id) return false;
-                              if (b.status !== "confirmed" && b.status !== "pending_payment") return false;
-                              return b.start_time.slice(0, 5) < slotEnd && normEnd(b.end_time.slice(0, 5)) > slot.start;
-                            });
+                            const slotInfo = bookingSpanMap.get(court.id)?.get(absIdx);
+                            // Skip — covered by a rowSpan from the booking's first slot
+                            if (slotInfo && !slotInfo.isStart) return null;
+
+                            const matchingBooking = slotInfo?.booking ?? null;
                             const isPending = matchingBooking?.status === "pending_payment";
                             const booked = !!matchingBooking;
                             const past = isPast(date, absIdx);
                             const available = !booked && !past && court.is_active;
+                            const rowSpan = slotInfo?.rowSpan ?? 1;
                             return (
                               <td
                                 key={court.id}
+                                rowSpan={rowSpan}
                                 onClick={() => available && openBookingModal(court.id, absIdx)}
-                                className={`px-1.5 sm:px-2.5 py-2 transition-colors ${courts.length > 1 ? "border-l border-border" : ""} ${
+                                className={`px-1.5 sm:px-2.5 align-middle transition-colors ${rowSpan > 1 ? "py-1.5" : "py-2"} ${courts.length > 1 ? "border-l border-border" : ""} ${
                                   available
-                                    ? "cursor-pointer"
-                                    : "cursor-default"
-                                }`}
-                              >
-                                <div
-                                  className={`w-full rounded-lg py-2.5 text-xs font-semibold text-center select-none transition-colors ${
-                                    available
                                       ? ""
                                       : isPending
                                       ? "bg-amber-50 text-amber-600 border border-amber-200"
                                       : booked
-                                      ? "bg-surface text-muted border border-border"
+                                      ? "bg-amber-100"
+                                      : "opacity-30 bg-surface text-muted"
+                                }`}
+                              >
+                                <div
+                                  className={`w-full h-full rounded-lg flex items-center justify-center text-xs font-semibold select-none transition-colors ${rowSpan === 1 ? "py-2.5" : "py-2"} ${
+                                    available
+                                      ? ""
+                                      : isPending
+                                      ? ""
+                                      : booked
+                                      ? ""
                                       : "opacity-30 bg-surface text-muted"
                                   }`}
                                 >
@@ -1150,6 +1177,15 @@ export default function BookPage() {
               lng={selectedLocation.longitude}
               label={selectedLocation.name}
             />
+            <a
+              href={`https://www.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent hover:text-accent transition-colors"
+            >
+              <MapPin size={14} />
+              Open in Google Maps
+            </a>
           </div>
         </div>
       )}

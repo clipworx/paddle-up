@@ -1846,6 +1846,40 @@ export default function MyLocationPage() {
               </div>
               <form onSubmit={onSaveCoordinates} className="space-y-3">
                 <MapPicker lat={mapLat} lng={mapLng} onChange={(lat, lng) => { setMapLat(lat); setMapLng(lng); }} />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">Latitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={mapLat ?? ""}
+                      onChange={(e) => setMapLat(e.target.value ? Number(e.target.value) : null)}
+                      placeholder="e.g. 14.5995"
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">Longitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={mapLng ?? ""}
+                      onChange={(e) => setMapLng(e.target.value ? Number(e.target.value) : null)}
+                      placeholder="e.g. 120.9842"
+                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
+                {mapLat !== null && mapLng !== null && (
+                  <a
+                    href={`https://www.google.com/maps?q=${mapLat},${mapLng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+                  >
+                    Verify on Google Maps ↗
+                  </a>
+                )}
                 {mapError && <p className="text-xs text-accent font-semibold">{mapError}</p>}
                 <button
                   type="submit"
