@@ -20,7 +20,7 @@ type Props = {
 export default function MapView({ lat, lng, label }: Props) {
   return (
     <div className="space-y-2">
-      <div className="rounded-xl overflow-hidden border border-border" style={{ height: 220 }}>
+      <div className="rounded-xl overflow-hidden border border-border isolate" style={{ height: 220 }}>
         <MapContainer
           center={[lat, lng]}
           zoom={16}

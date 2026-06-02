@@ -49,13 +49,23 @@ export function AdminNav({ onLogout }: Props) {
           })}
         </div>
 
-        {/* Log out — separated to the right */}
-        <button
-          onClick={onLogout}
-          className="shrink-0 text-sm font-semibold text-muted hover:text-accent transition-colors"
-        >
-          Log out
-        </button>
+        {/* Account + Log out */}
+        <div className="flex items-center gap-3 shrink-0">
+          <Link
+            href="/admin/account"
+            className={`text-sm font-semibold transition-colors ${
+              pathname === "/admin/account" ? "text-accent" : "text-muted hover:text-foreground"
+            }`}
+          >
+            Account
+          </Link>
+          <button
+            onClick={onLogout}
+            className="text-sm font-semibold text-muted hover:text-accent transition-colors"
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </nav>
   );

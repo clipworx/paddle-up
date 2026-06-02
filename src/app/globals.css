@@ -30,3 +30,10 @@ body {
   background: var(--accent);
   color: var(--background);
 }
+
+/* Scope Leaflet's z-indexes inside the map container so they don't overlap the navbar or modals */
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control-container {
+  z-index: 10;
+}

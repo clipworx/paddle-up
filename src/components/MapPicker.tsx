@@ -51,7 +51,7 @@ export default function MapPicker({ lat, lng, onChange }: Props) {
 
   return (
     <div className="space-y-2">
-      <div className="rounded-xl overflow-hidden border border-border" style={{ height: 300 }}>
+      <div className="rounded-xl overflow-hidden border border-border isolate" style={{ height: 300 }}>
         <MapContainer
           center={[centerLat, centerLng]}
           zoom={DEFAULT_ZOOM}

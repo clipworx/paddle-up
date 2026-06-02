@@ -64,32 +64,34 @@ export async function GET(req: Request) {
   if (!claims) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
-  const date = searchParams.get("date");
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json({ error: "date_required" }, { status: 400 });
-  }
+  const page   = Math.max(1, parseInt(searchParams.get("page")  ?? "1",  10));
+  const limit  = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
+  const status = searchParams.get("status");
+  const search = searchParams.get("search")?.trim() ?? "";
+  const offset = (page - 1) * limit;
 
   const supabase = getAdminSupabase();
 
   let courtIds: string[] | null = null;
   if (claims.role === "location_admin" && claims.location_id) {
     const { data: locationCourts } = await supabase
-      .from("courts")
-      .select("id")
-      .eq("location_id", claims.location_id);
+      .from("courts").select("id").eq("location_id", claims.location_id);
     courtIds = locationCourts?.map((c) => c.id) ?? [];
-    if (courtIds.length === 0) return NextResponse.json({ bookings: [] });
+    if (courtIds.length === 0) return NextResponse.json({ bookings: [], total: 0, page, limit });
   }
 
   let query = supabase
     .from("bookings")
-    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, refund_reason, created_at, courts(name)")
-    .eq("date", date)
-    .order("start_time");
+    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, refund_reason, created_at, courts(name)", { count: "exact" })
+    .order("date", { ascending: false })
+    .order("start_time", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (courtIds) query = query.in("court_id", courtIds);
+  if (status)   query = query.eq("status", status);
+  if (search)   query = query.or(`booker_name.ilike.%${search}%,booker_phone.ilike.%${search}%,booker_email.ilike.%${search}%`);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const bookings = (data ?? []).map((b) => ({
@@ -98,5 +100,5 @@ export async function GET(req: Request) {
     courts: undefined,
   }));
 
-  return NextResponse.json({ bookings });
+  return NextResponse.json({ bookings, total: count ?? 0, page, limit });
 }
