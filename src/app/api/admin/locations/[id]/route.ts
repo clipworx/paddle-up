@@ -78,7 +78,7 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown };
+  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -89,9 +89,14 @@ export async function PUT(req: Request, { params }: Params) {
   const address = typeof body.address === "string" ? body.address.trim() || null : undefined;
   const description = typeof body.description === "string" ? body.description.trim() || null : undefined;
   const accent_color = typeof body.accent_color === "string" ? body.accent_color.trim() || null : undefined;
+  const is_active = typeof body.is_active === "boolean" ? body.is_active : undefined;
+  const slugRaw = typeof body.slug === "string" ? body.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "") : null;
 
   if (name !== null && !name) {
     return NextResponse.json({ error: "name_required" }, { status: 400 });
+  }
+  if (slugRaw !== null && !slugRaw) {
+    return NextResponse.json({ error: "slug_required" }, { status: 400 });
   }
 
   const updates: Record<string, unknown> = {};
@@ -99,12 +104,21 @@ export async function PUT(req: Request, { params }: Params) {
   if (address !== undefined) updates.address = address;
   if (description !== undefined) updates.description = description;
   if (accent_color !== undefined) updates.accent_color = accent_color;
+  if (is_active !== undefined) updates.is_active = is_active;
+  if (slugRaw !== null) updates.slug = slugRaw;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });
   }
 
   const supabase = getAdminSupabase();
+
+  // When reactivating a location, also reactivate all its courts so the
+  // location is immediately bookable again (mirrors deactivate behaviour).
+  if (is_active === true) {
+    await supabase.from("courts").update({ is_active: true }).eq("location_id", id);
+  }
+
   const { error } = await supabase.from("locations").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

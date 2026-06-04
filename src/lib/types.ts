@@ -82,6 +82,7 @@ export const MAX_COURTS = 4;
 export type Location = {
   id: string;
   name: string;
+  slug: string;
   address: string | null;
   description: string | null;
   is_active: boolean;

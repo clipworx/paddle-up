@@ -71,6 +71,7 @@ export default function AdminLocationsPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editPricingId, setEditPricingId] = useState<string | null>(null);
   const [pricingForm, setPricingForm] = useState<PricingForm>({ day_rate: "0", night_rate: "0", night_start_time: "18:00", open_hour: 0, close_hour: 24, weekend_night_start_time: "18:00", weekend_open_hour: 0, weekend_close_hour: 24 });
@@ -85,7 +86,7 @@ export default function AdminLocationsPage() {
   const [editCourtSaving, setEditCourtSaving] = useState(false);
   const [editCourtError, setEditCourtError] = useState<string | null>(null);
   const [togglingCourtId, setTogglingCourtId] = useState<string | null>(null);
-  const [editInfo, setEditInfo] = useState<{ id: string; name: string; address: string; description: string } | null>(null);
+  const [editInfo, setEditInfo] = useState<{ id: string; name: string; address: string; description: string; slug: string } | null>(null);
   const [editInfoSaving, setEditInfoSaving] = useState(false);
   const [editInfoError, setEditInfoError] = useState<string | null>(null);
   const [brandingId, setBrandingId] = useState<string | null>(null);
@@ -143,6 +144,25 @@ export default function AdminLocationsPage() {
       setFormError((err as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onActivate(id: string) {
+    setActivatingId(id);
+    try {
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      if (res.status === 401) { router.replace("/admin/login"); return; }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Activation failed");
+      await load();
+    } catch (err) {
+      alert((err as Error).message);
+    } finally {
+      setActivatingId(null);
     }
   }
 
@@ -275,6 +295,7 @@ export default function AdminLocationsPage() {
           name: editInfo.name,
           address: editInfo.address,
           description: editInfo.description,
+          slug: editInfo.slug,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -498,6 +519,11 @@ export default function AdminLocationsPage() {
                         })()}
                       </div>
                       {loc.address && <p className="text-xs text-muted mt-1">{loc.address}</p>}
+                      {loc.slug && (
+                        <p className="text-xs text-muted mt-0.5 font-mono">
+                          /book/<span className="text-accent">{loc.slug}</span>
+                        </p>
+                      )}
                       {loc.description && <p className="text-sm text-muted mt-0.5">{loc.description}</p>}
                       {(loc.day_rate > 0 || loc.night_rate > 0) && (
                         <p className="text-xs text-muted mt-1.5">
@@ -542,7 +568,7 @@ export default function AdminLocationsPage() {
                   {/* Secondary actions */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
-                      onClick={() => setEditInfo({ id: loc.id, name: loc.name, address: loc.address ?? "", description: loc.description ?? "" })}
+                      onClick={() => setEditInfo({ id: loc.id, name: loc.name, address: loc.address ?? "", description: loc.description ?? "", slug: loc.slug ?? "" })}
                       className={btnSecondary}
                     >
                       Edit info
@@ -572,13 +598,21 @@ export default function AdminLocationsPage() {
                         Clear sub
                       </button>
                     )}
-                    {loc.is_active && (
+                    {loc.is_active ? (
                       <button
                         onClick={() => onDeactivate(loc.id, loc.name)}
                         disabled={deactivatingId === loc.id}
                         className={btnDanger}
                       >
                         {deactivatingId === loc.id ? "Deactivating…" : "Deactivate"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onActivate(loc.id)}
+                        disabled={activatingId === loc.id}
+                        className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
+                      >
+                        {activatingId === loc.id ? "Activating…" : "Activate"}
                       </button>
                     )}
                   </div>
@@ -1061,6 +1095,24 @@ export default function AdminLocationsPage() {
                 placeholder="Brief description shown to customers…"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent resize-none"
               />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="text-xs uppercase tracking-wide text-muted font-semibold">
+                Booking URL slug <span className="text-accent">*</span>
+              </span>
+              <div className="flex items-center rounded-lg border border-border bg-background overflow-hidden focus-within:border-accent">
+                <span className="px-3 py-2.5 text-sm text-muted border-r border-border shrink-0 bg-surface">/book/</span>
+                <input
+                  type="text"
+                  required
+                  value={editInfo.slug}
+                  onChange={(e) => setEditInfo({ ...editInfo, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+                  placeholder="my-location"
+                  className="flex-1 px-3 py-2.5 text-sm text-foreground bg-background focus:outline-none font-mono"
+                />
+              </div>
+              <p className="text-[11px] text-muted">Lowercase letters, numbers, and hyphens only.</p>
             </label>
 
             {editInfoError && <p className="text-sm text-accent font-semibold">{editInfoError}</p>}

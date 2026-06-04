@@ -210,9 +210,10 @@ function LocationPicker({
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
-export default function BookPage() {
+export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const today = formatDate(new Date());
   const [locations, setLocations] = useState<Location[] | null>(null);
+  const [locationNotFound, setLocationNotFound] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [date, setDate] = useState(today);
   const [courts, setCourts] = useState<Court[]>([]);
@@ -248,10 +249,16 @@ export default function BookPage() {
       .then((j) => {
         const locs: Location[] = j.locations ?? [];
         setLocations(locs);
-        if (locs.length === 1) setSelectedLocation(locs[0]);
+        if (initialSlug) {
+          const match = locs.find((l) => l.slug === initialSlug);
+          if (match) setSelectedLocation(match);
+          else setLocationNotFound(true);
+        } else if (locs.length === 1) {
+          setSelectedLocation(locs[0]);
+        }
       })
       .catch(() => setLocations([]));
-  }, []);
+  }, [initialSlug]);
 
   useEffect(() => {
     if (!selectedLocation) return;
@@ -538,7 +545,7 @@ export default function BookPage() {
                 Map
               </button>
             )}
-            {selectedLocation && (locations?.length ?? 0) > 1 && (
+            {selectedLocation && !initialSlug && (locations?.length ?? 0) > 1 && (
               <button
                 onClick={() => { setSelectedLocation(null); setCourts([]); setBookings([]); }}
                 className="text-sm font-semibold text-muted hover:text-foreground transition-colors"
@@ -639,7 +646,17 @@ export default function BookPage() {
         </div>
       )}
 
-      {locations === null && (
+      {locationNotFound && (
+        <div className="rounded-2xl border border-border bg-background p-10 text-center space-y-3 shadow-sm">
+          <p className="text-base font-bold text-foreground">Location not found</p>
+          <p className="text-sm text-muted">No active location exists at this URL.</p>
+          <Link href="/book" className="inline-block rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors">
+            See all locations
+          </Link>
+        </div>
+      )}
+
+      {locations === null && !locationNotFound && (
         <p className="text-sm text-muted py-8 text-center">Loading…</p>
       )}
 
@@ -1286,4 +1303,8 @@ export default function BookPage() {
       )}
     </div>
   );
+}
+
+export default function BookPage() {
+  return <BookingPage />;
 }
