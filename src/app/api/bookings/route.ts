@@ -75,7 +75,7 @@ export async function POST(req: Request) {
   // Fetch court + location info; verify location is active and subscription is valid
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, is_active, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days)")
+    .select("name, location_id, is_active, parent_court_id, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days)")
     .eq("id", court_id)
     .single();
 
@@ -102,6 +102,42 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "location_subscription_expired" }, { status: 409 });
     }
   }
+
+  // ── Parent/child conflict check ───────────────────────────────────────────
+  // Booking a parent blocks all its children; booking a child blocks the parent.
+  const parentId = (courtRow as { parent_court_id?: string | null }).parent_court_id ?? null;
+  const conflictingCourtIds: string[] = [];
+
+  if (parentId) {
+    // This court is a child → the parent must not be booked in this window
+    conflictingCourtIds.push(parentId);
+  } else {
+    // This court might be a parent → none of its children can be booked in this window
+    const { data: children } = await supabase
+      .from("courts")
+      .select("id")
+      .eq("parent_court_id", court_id);
+    if (children?.length) {
+      conflictingCourtIds.push(...children.map((c) => c.id));
+    }
+  }
+
+  if (conflictingCourtIds.length > 0) {
+    const { data: conflictHits } = await supabase
+      .from("bookings")
+      .select("id")
+      .in("court_id", conflictingCourtIds)
+      .eq("date", date)
+      .in("status", ["confirmed", "pending_payment"])
+      .lt("start_time", end_time)
+      .gt("end_time", start_time)
+      .limit(1);
+
+    if (conflictHits && conflictHits.length > 0) {
+      return NextResponse.json({ error: "slot_taken" }, { status: 409 });
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const requiresPayment = !!loc?.payment_qr_url;
   const status = requiresPayment ? "pending_payment" : "confirmed";

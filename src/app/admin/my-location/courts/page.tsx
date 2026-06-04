@@ -14,7 +14,12 @@ export default function CourtsPage() {
   const [addCourtError, setAddCourtError] = useState<string | null>(null);
   const [deactivatingCourtId, setDeactivatingCourtId] = useState<string | null>(null);
   const [activatingCourtId, setActivatingCourtId] = useState<string | null>(null);
-  const [editCourt, setEditCourt] = useState<{ id: string; name: string; description: string } | null>(null);
+  const [editCourt, setEditCourt] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    parent_court_id: string | null;
+  } | null>(null);
   const [editCourtSaving, setEditCourtSaving] = useState(false);
   const [editCourtError, setEditCourtError] = useState<string | null>(null);
   const courtNameRef = useRef<HTMLInputElement>(null);
@@ -101,10 +106,22 @@ export default function CourtsPage() {
       const res = await fetch(`/api/admin/courts/${encodeURIComponent(editCourt.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: editCourt.name, description: editCourt.description }),
+        body: JSON.stringify({
+          name: editCourt.name,
+          description: editCourt.description,
+          parent_court_id: editCourt.parent_court_id,
+        }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Failed to update court");
+      if (!res.ok) {
+        const msgs: Record<string, string> = {
+          parent_not_found: "The selected parent court was not found.",
+          parent_different_location: "Parent court must be in the same location.",
+          parent_cannot_be_child: "The selected parent is already a subdivision of another court.",
+          court_has_children: "This court already has subdivisions and cannot itself be a subdivision.",
+        };
+        throw new Error(msgs[json.error] || json.error || "Failed to update court");
+      }
       setEditCourt(null);
       if (me?.location_id) loadCourts(me.location_id);
     } catch (err) {
@@ -113,6 +130,17 @@ export default function CourtsPage() {
       setEditCourtSaving(false);
     }
   }
+
+  // Courts eligible to be a parent: active, no parent themselves, not the court being edited
+  const parentCandidates = (courts ?? []).filter(
+    (c) => c.is_active && c.parent_court_id === null && c.id !== editCourt?.id
+  );
+
+  // Map for quick name lookup
+  const courtNameById = Object.fromEntries((courts ?? []).map((c) => [c.id, c.name]));
+
+  // Which courts have children (are parents)
+  const parentIds = new Set((courts ?? []).map((c) => c.parent_court_id).filter(Boolean));
 
   return (
     <>
@@ -139,55 +167,86 @@ export default function CourtsPage() {
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
-              {courts.map((court) => (
-                <div
-                  key={court.id}
-                  className={`flex items-start justify-between rounded-xl border bg-background px-4 py-3 gap-3 ${
-                    court.is_active ? "border-border" : "border-border opacity-50"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-foreground text-sm">{court.name}</p>
-                      {!court.is_active && (
-                        <span className="rounded-full bg-surface text-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest border border-border">
-                          Inactive
-                        </span>
+              {courts.map((court) => {
+                const isChild = !!court.parent_court_id;
+                const isParent = parentIds.has(court.id);
+                const childCount = (courts ?? []).filter((c) => c.parent_court_id === court.id).length;
+
+                return (
+                  <div
+                    key={court.id}
+                    className={`flex items-start justify-between rounded-xl border bg-background px-4 py-3 gap-3 ${
+                      court.is_active ? "border-border" : "border-border opacity-50"
+                    } ${isChild ? "ml-4 border-l-2 border-l-accent/40" : ""}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-semibold text-foreground text-sm">{court.name}</p>
+                        {!court.is_active && (
+                          <span className="rounded-full bg-surface text-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest border border-border">
+                            Inactive
+                          </span>
+                        )}
+                        {isParent && (
+                          <span className="rounded-full bg-accent/10 text-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+                            {childCount} {childCount === 1 ? "subdivision" : "subdivisions"}
+                          </span>
+                        )}
+                      </div>
+                      {isChild && court.parent_court_id && (
+                        <p className="text-[11px] text-muted mt-0.5">
+                          Subdivision of {courtNameById[court.parent_court_id] ?? "—"}
+                        </p>
+                      )}
+                      {court.description && (
+                        <p className="text-xs text-muted mt-0.5 truncate">{court.description}</p>
                       )}
                     </div>
-                    {court.description && (
-                      <p className="text-xs text-muted mt-0.5 truncate">{court.description}</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => setEditCourt({ id: court.id, name: court.name, description: court.description ?? "" })}
-                      className="rounded-lg border border-border px-3 py-1.5 min-h-11 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-                    >
-                      Edit
-                    </button>
-                    {court.is_active ? (
+                    <div className="flex gap-2 shrink-0">
                       <button
-                        onClick={() => onDeactivateCourt(court.id, court.name)}
-                        disabled={deactivatingCourtId === court.id}
-                        className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 min-h-11 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+                        onClick={() => setEditCourt({
+                          id: court.id,
+                          name: court.name,
+                          description: court.description ?? "",
+                          parent_court_id: court.parent_court_id,
+                        })}
+                        className="rounded-lg border border-border px-3 py-1.5 min-h-11 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
                       >
-                        {deactivatingCourtId === court.id ? "…" : "Deactivate"}
+                        Edit
                       </button>
-                    ) : (
-                      <button
-                        onClick={() => onActivateCourt(court.id)}
-                        disabled={activatingCourtId === court.id}
-                        className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 min-h-11 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
-                      >
-                        {activatingCourtId === court.id ? "…" : "Activate"}
-                      </button>
-                    )}
+                      {court.is_active ? (
+                        <button
+                          onClick={() => onDeactivateCourt(court.id, court.name)}
+                          disabled={deactivatingCourtId === court.id}
+                          className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 min-h-11 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+                        >
+                          {deactivatingCourtId === court.id ? "…" : "Deactivate"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onActivateCourt(court.id)}
+                          disabled={activatingCourtId === court.id}
+                          className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 min-h-11 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
+                        >
+                          {activatingCourtId === court.id ? "…" : "Activate"}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
+        </section>
+
+        {/* ── Explanation ── */}
+        <section className="rounded-xl border border-border bg-background/60 px-5 py-4">
+          <h3 className="text-sm font-bold text-foreground mb-1">Shared spaces</h3>
+          <p className="text-xs text-muted leading-relaxed">
+            If a large court (e.g. a basketball court) can be split into smaller courts (e.g. 3 pickleball courts),
+            mark the smaller courts as subdivisions of the larger one. Booking the full court will block all subdivisions,
+            and booking any subdivision will block the full court.
+          </p>
         </section>
       </main>
 
@@ -287,6 +346,28 @@ export default function CourtsPage() {
                 placeholder="Optional notes about this court…"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[16px] sm:text-sm text-foreground focus:outline-none focus:border-accent resize-none"
               />
+            </label>
+
+            {/* Parent court selector */}
+            <label className="block space-y-1">
+              <span className="text-xs uppercase tracking-wide text-muted font-semibold">
+                Shared space (parent court)
+              </span>
+              <select
+                value={editCourt.parent_court_id ?? ""}
+                onChange={(e) =>
+                  setEditCourt({ ...editCourt, parent_court_id: e.target.value || null })
+                }
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[16px] sm:text-sm text-foreground focus:outline-none focus:border-accent"
+              >
+                <option value="">None (standalone court)</option>
+                {parentCandidates.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted">
+                If this court shares physical space with a larger court, select that court as the parent. Booking the parent will block this court and vice versa.
+              </p>
             </label>
 
             {editCourtError && (

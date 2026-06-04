@@ -117,6 +117,7 @@ export type Court = {
   description: string | null;
   is_active: boolean;
   location_id: string;
+  parent_court_id: string | null;
 };
 
 export type BookingStatus = "confirmed" | "cancelled" | "pending_payment" | "refunded";

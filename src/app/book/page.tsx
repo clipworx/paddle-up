@@ -87,6 +87,16 @@ function isSlotBooked(bookings: Booking[], courtId: string, slotIdx: number): bo
   });
 }
 
+// Returns true if a related court (parent or child) is booked, blocking this slot.
+function isSlotBlockedByRelated(courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
+  if (court.parent_court_id && isSlotBooked(bookings, court.parent_court_id, slotIdx)) return true;
+  return courts.some((c) => c.parent_court_id === court.id && isSlotBooked(bookings, c.id, slotIdx));
+}
+
+function isSlotUnavailable(courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
+  return isSlotBooked(bookings, court.id, slotIdx) || isSlotBlockedByRelated(courts, bookings, court, slotIdx);
+}
+
 function isPast(dateIso: string, slotIdx: number): boolean {
   const slot = TIME_SLOTS[slotIdx];
   const now = new Date();
@@ -317,16 +327,18 @@ export default function BookPage() {
 
   // Find the first non-past, non-booked slot within operating hours
   function defaultStartIdx(courtId: string): number {
+    const court = courts.find((c) => c.id === courtId);
     for (let i = openH; i < closeH; i++) {
-      if (!isPast(date, i) && !isSlotBooked(bookings, courtId, i)) return i;
+      if (!isPast(date, i) && (!court || !isSlotUnavailable(courts, bookings, court, i))) return i;
     }
     return openH;
   }
 
-  // Last valid end slot within operating hours, not crossing a booked slot
+  // Last valid end slot within operating hours, not crossing a booked or blocked slot
   function maxEndIdx(courtId: string, startIdx: number): number {
+    const court = courts.find((c) => c.id === courtId);
     for (let i = startIdx; i < closeH; i++) {
-      if (isSlotBooked(bookings, courtId, i)) return i - 1;
+      if (court && isSlotUnavailable(courts, bookings, court, i)) return i - 1;
     }
     return closeH - 1;
   }
@@ -367,9 +379,10 @@ export default function BookPage() {
 
   // Check if the currently selected range has a conflict
   function rangeConflict(): string | null {
+    const court = courts.find((c) => c.id === form.court_id);
     for (let i = form.startIdx; i <= form.endIdx; i++) {
       if (isPast(date, i)) return `${TIME_SLOTS[i].start} is in the past.`;
-      if (isSlotBooked(bookings, form.court_id, i)) return `${TIME_SLOTS[i].start} is already booked.`;
+      if (court && isSlotUnavailable(courts, bookings, court, i)) return `${TIME_SLOTS[i].start} is not available.`;
     }
     return null;
   }
@@ -474,9 +487,11 @@ export default function BookPage() {
     : 0;
 
   // Available start indices for the selected court within operating hours
-  const availableStarts = visibleSlotIndices.filter(
-    (i) => !isPast(date, i) && !isSlotBooked(bookings, form.court_id, i)
-  );
+  const availableStarts = visibleSlotIndices.filter((i) => {
+    if (isPast(date, i)) return false;
+    const court = courts.find((c) => c.id === form.court_id);
+    return !court || !isSlotUnavailable(courts, bookings, court, i);
+  });
 
   return (
     <div className="min-h-screen bg-surface">
@@ -853,8 +868,9 @@ export default function BookPage() {
                             const matchingBooking = slotInfo?.booking ?? null;
                             const isPending = matchingBooking?.status === "pending_payment";
                             const booked = !!matchingBooking;
+                            const blockedByRelated = !booked && isSlotBlockedByRelated(courts, bookings, court, absIdx);
                             const past = isPast(date, absIdx);
-                            const available = !booked && !past && court.is_active;
+                            const available = !booked && !blockedByRelated && !past && court.is_active;
                             const rowSpan = slotInfo?.rowSpan ?? 1;
                             return (
                               <td
@@ -863,26 +879,22 @@ export default function BookPage() {
                                 onClick={() => available && openBookingModal(court.id, absIdx)}
                                 className={`px-1.5 sm:px-2.5 align-middle transition-colors ${rowSpan > 1 ? "py-1.5" : "py-2"} ${courts.length > 1 ? "border-l border-border" : ""} ${
                                   available
-                                      ? ""
-                                      : isPending
-                                      ? "bg-amber-50 text-amber-600 border border-amber-200"
-                                      : booked
-                                      ? "bg-amber-100"
-                                      : "opacity-30 bg-surface text-muted"
+                                    ? ""
+                                    : isPending
+                                    ? "bg-amber-50 text-amber-600 border border-amber-200"
+                                    : booked
+                                    ? "bg-amber-100"
+                                    : blockedByRelated
+                                    ? "bg-surface/60"
+                                    : "opacity-30 bg-surface text-muted"
                                 }`}
                               >
                                 <div
                                   className={`w-full h-full rounded-lg flex items-center justify-center text-xs font-semibold select-none transition-colors ${rowSpan === 1 ? "py-2.5" : "py-2"} ${
-                                    available
-                                      ? ""
-                                      : isPending
-                                      ? ""
-                                      : booked
-                                      ? ""
-                                      : "opacity-30 bg-surface text-muted"
+                                    blockedByRelated ? "text-muted" : ""
                                   }`}
                                 >
-                                  {isPending ? "Pending" : booked ? "Booked" : available ? "" : "—"}
+                                  {isPending ? "Pending" : booked ? "Booked" : blockedByRelated ? "Blocked" : available ? "" : "—"}
                                 </div>
                               </td>
                             );
@@ -904,6 +916,9 @@ export default function BookPage() {
                 </span>
                 <span className="rounded-lg bg-amber-50 text-amber-600 border border-amber-200 px-3 py-1 text-xs font-semibold">
                   Pending payment
+                </span>
+                <span className="rounded-lg bg-surface/60 text-muted border border-border px-3 py-1 text-xs font-semibold">
+                  Blocked (shared space)
                 </span>
                 <span className="rounded-lg bg-surface text-muted border border-border px-3 py-1 text-xs font-semibold opacity-30">
                   Past / inactive
@@ -1008,11 +1023,12 @@ export default function BookPage() {
                 >
                   {visibleSlotIndices.map((i) => {
                     const past = isPast(date, i);
-                    const booked = isSlotBooked(bookings, form.court_id, i);
+                    const court = courts.find((c) => c.id === form.court_id);
+                    const unavailable = !!court && isSlotUnavailable(courts, bookings, court, i);
                     const h = parseInt(TIME_SLOTS[i].start.slice(0, 2), 10);
                     return (
-                      <option key={i} value={i} disabled={past || booked}>
-                        {fmtHour(h)}{past ? " (past)" : booked ? " (booked)" : ""}
+                      <option key={i} value={i} disabled={past || unavailable}>
+                        {fmtHour(h)}{past ? " (past)" : unavailable ? " (unavailable)" : ""}
                       </option>
                     );
                   })}
