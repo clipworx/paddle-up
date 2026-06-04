@@ -51,11 +51,14 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const { data: { publicUrl } } = supabase.storage.from("qr-images").getPublicUrl(path);
+  // Append a version timestamp so browsers/CDN never serve a stale cached image
+  // after the file is overwritten at the same storage path.
+  const versionedUrl = `${publicUrl}?v=${Date.now()}`;
 
   const { error: updateError } = await supabase
     .from("locations")
     .update({
-      payment_qr_url: publicUrl,
+      payment_qr_url: versionedUrl,
       payment_account_name: typeof accountName === "string" ? accountName.trim() || null : null,
       payment_account_number: typeof accountNumber === "string" ? accountNumber.trim() || null : null,
     })

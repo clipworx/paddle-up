@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useAnnouncer } from "@/hooks/useAnnouncer";
 import { PendingMatch, Player, ResultMode, ServingTeam } from "@/lib/types";
 
 type Props = {
@@ -32,10 +33,28 @@ export function CourtSummaryCard({
   onDeclareWinner,
 }: Props) {
   const [declaring, setDeclaring] = useState(false);
+  const { speakSequence } = useAnnouncer();
 
   useEffect(() => {
     setDeclaring(false);
   }, [pending?.id]);
+
+  const announcePlayers = () => {
+    if (!pending) return;
+    const a1 = nameOf(players, pending.teamA[0]);
+    const a2 = nameOf(players, pending.teamA[1]);
+    const b1 = nameOf(players, pending.teamB[0]);
+    const b2 = nameOf(players, pending.teamB[1]);
+    speakSequence([
+      { text: `Court ${courtIndex + 1}.` },
+      { text: " " },
+      { text: `${a1} and ${a2},` },
+      { text: " " },
+      { text: "VERSUS!", rate: 0.7, pitch: 0.8 },
+      { text: " " },
+      { text: `${b1} and ${b2}.` },
+    ]);
+  };
 
   const handleDeclare = (winner: "A" | "B") => {
     setDeclaring(true);
@@ -117,9 +136,19 @@ export function CourtSummaryCard({
       <div className="rounded-xl border border-border bg-background/60 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="text-sm font-semibold text-foreground">{label}</h2>
-          <Link href={href} className="text-xs text-muted hover:text-accent transition-colors">
-            Open →
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={announcePlayers}
+              className="text-xs text-muted hover:text-accent transition-colors"
+              title="Announce players"
+            >
+              📣 Announce
+            </button>
+            <Link href={href} className="text-xs text-muted hover:text-accent transition-colors">
+              Open →
+            </Link>
+          </div>
         </div>
         <div className="divide-y divide-border">
           <button
@@ -164,19 +193,35 @@ export function CourtSummaryCard({
   }
 
   return (
-    <Link
-      href={href}
-      className="block rounded-xl border border-border bg-background/60 p-4 hover:bg-accent/5 hover:border-accent transition-colors shadow-sm"
-    >
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-foreground">{label}</h2>
-        <span className="text-xs text-accent font-medium">Tap to score →</span>
+    <div className="rounded-xl border border-border bg-background/60 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+        <div className="flex items-center gap-3">
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={announcePlayers}
+              className="text-xs text-muted hover:text-accent transition-colors"
+              title="Announce players"
+            >
+              📣 Announce
+            </button>
+          )}
+          <Link href={href} className="text-xs text-accent font-medium hover:underline transition-colors">
+            {readOnly ? "Watch →" : "Score →"}
+          </Link>
+        </div>
       </div>
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-2 sm:gap-3 items-center min-w-0">
-        {teamPanel("A")}
-        <span className="self-center text-xs text-muted">vs</span>
-        {teamPanel("B")}
-      </div>
-    </Link>
+      <Link
+        href={href}
+        className="block p-4 hover:bg-accent/5 transition-colors"
+      >
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 sm:gap-3 items-center min-w-0">
+          {teamPanel("A")}
+          <span className="self-center text-xs text-muted">vs</span>
+          {teamPanel("B")}
+        </div>
+      </Link>
+    </div>
   );
 }

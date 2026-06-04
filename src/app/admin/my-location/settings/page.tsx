@@ -109,6 +109,8 @@ export default function SettingsPage() {
     setMapLat(location.latitude ?? null);
     setMapLng(location.longitude ?? null);
     setSelectedColor(location.accent_color ?? null);
+    setQrAccountName(location.payment_account_name ?? "");
+    setQrAccountNumber(location.payment_account_number ?? "");
   }, [location]);
 
   async function onSaveInfo(e: React.FormEvent<HTMLFormElement>) {

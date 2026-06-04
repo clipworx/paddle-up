@@ -60,6 +60,10 @@ export async function POST(req: Request) {
   if (!booker_phone) {
     return NextResponse.json({ error: "phone_required" }, { status: 400 });
   }
+  const normalizedPhone = booker_phone.replace(/[\s\-().]/g, "");
+  if (!/^(\+?63|0)9\d{9}$/.test(normalizedPhone)) {
+    return NextResponse.json({ error: "phone_invalid" }, { status: 400 });
+  }
   if (booker_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
     return NextResponse.json({ error: "valid_email_required" }, { status: 400 });
   }
