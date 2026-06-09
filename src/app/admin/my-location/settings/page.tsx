@@ -93,6 +93,14 @@ export default function SettingsPage() {
   const [colorError, setColorError] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
 
+  // Booking policy state
+  const [requireDownpayment, setRequireDownpayment]     = useState(false);
+  const [downpaymentMinHours, setDownpaymentMinHours]   = useState(3);
+  const [noSplitRate, setNoSplitRate]                   = useState(false);
+  const [policySaving, setPolicySaving]                 = useState(false);
+  const [policyError, setPolicyError]                   = useState<string | null>(null);
+  const [policySuccess, setPolicySuccess]               = useState(false);
+
   // Sync state from location once loaded
   React.useEffect(() => {
     if (!location) return;
@@ -111,7 +119,39 @@ export default function SettingsPage() {
     setSelectedColor(location.accent_color ?? null);
     setQrAccountName(location.payment_account_name ?? "");
     setQrAccountNumber(location.payment_account_number ?? "");
+    setRequireDownpayment(location.require_downpayment ?? false);
+    setDownpaymentMinHours(location.downpayment_min_hours ?? 3);
+    setNoSplitRate(location.no_split_rate_booking ?? false);
   }, [location]);
+
+  async function onSavePolicies() {
+    if (!location) return;
+    setPolicySaving(true);
+    setPolicyError(null);
+    setPolicySuccess(false);
+    try {
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          require_downpayment: requireDownpayment,
+          downpayment_min_hours: downpaymentMinHours,
+          no_split_rate_booking: noSplitRate,
+        }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error ?? "Failed to save");
+      }
+      setPolicySuccess(true);
+      setTimeout(() => setPolicySuccess(false), 2500);
+      if (me?.location_id) loadLocation(me.location_id);
+    } catch (err) {
+      setPolicyError((err as Error).message);
+    } finally {
+      setPolicySaving(false);
+    }
+  }
 
   async function onSaveInfo(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -611,6 +651,58 @@ export default function SettingsPage() {
               className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
             >
               {colorSaving ? "Saving…" : "Save color"}
+            </button>
+          </div>
+
+          {/* Booking policies */}
+          <div className="rounded-xl border border-border bg-background p-5 space-y-4">
+            <div>
+              <h2 className="text-sm font-bold text-foreground">Booking policies</h2>
+              <p className="text-xs text-muted mt-1">Control how players can book courts at your location.</p>
+            </div>
+            <div className="space-y-4">
+              {/* Down payment */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Require 50% down payment for long bookings</p>
+                  <p className="text-xs text-muted mt-0.5">Bookers pay 50% upfront. The down payment is non-refundable on cancellation.</p>
+                  {requireDownpayment && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <label className="text-xs text-muted font-semibold">Threshold:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={12}
+                        value={downpaymentMinHours}
+                        onChange={(e) => setDownpaymentMinHours(Math.max(1, parseInt(e.target.value) || 3))}
+                        className="w-16 rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground focus:outline-none focus:border-accent text-center"
+                      />
+                      <span className="text-xs text-muted">hours</span>
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => setRequireDownpayment((v) => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${requireDownpayment ? "bg-accent" : "bg-border"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${requireDownpayment ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+              </div>
+              {/* No split-rate */}
+              <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Prevent bookings that span day/night rates</p>
+                  <p className="text-xs text-muted mt-0.5">Block bookings that cross the day/night boundary (e.g. 4–6 PM when night starts at 5 PM). Players must book day and night separately.</p>
+                </div>
+                <button type="button" onClick={() => setNoSplitRate((v) => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${noSplitRate ? "bg-accent" : "bg-border"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${noSplitRate ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+              </div>
+            </div>
+            {policyError && <p className="text-xs text-red-600">{policyError}</p>}
+            {policySuccess && <p className="text-xs text-green-600">Policies saved.</p>}
+            <button type="button" onClick={onSavePolicies} disabled={policySaving}
+              className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40">
+              {policySaving ? "Saving…" : "Save policies"}
             </button>
           </div>
 

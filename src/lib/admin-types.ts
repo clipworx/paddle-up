@@ -22,6 +22,9 @@ export type LocationInfo = {
   accent_color: string | null;
   subscription_due_date: string | null;
   subscription_grace_days: number;
+  require_downpayment: boolean;
+  downpayment_min_hours: number;
+  no_split_rate_booking: boolean;
 };
 
 export type Announcement = {

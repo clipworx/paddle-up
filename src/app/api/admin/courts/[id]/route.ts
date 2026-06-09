@@ -24,7 +24,7 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
-  let body: { name?: unknown; description?: unknown; is_active?: unknown; parent_court_id?: unknown };
+  let body: { name?: unknown; description?: unknown; is_active?: unknown; parent_court_id?: unknown; custom_day_rate?: unknown; custom_night_rate?: unknown; custom_rate_unit?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -71,11 +71,30 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
+  // custom_day_rate / custom_night_rate: null clears override, number sets it, missing = no change
+  const custom_day_rate =
+    body.custom_day_rate === null ? null :
+    typeof body.custom_day_rate === "number" && body.custom_day_rate >= 0 ? body.custom_day_rate :
+    undefined;
+  const custom_night_rate =
+    body.custom_night_rate === null ? null :
+    typeof body.custom_night_rate === "number" && body.custom_night_rate >= 0 ? body.custom_night_rate :
+    undefined;
+
   const updates: Record<string, unknown> = {};
   if (name !== null) updates.name = name;
   if (description !== undefined) updates.description = description;
   if (is_active !== undefined) updates.is_active = is_active;
   if (parent_court_id !== undefined) updates.parent_court_id = parent_court_id;
+  const custom_rate_unit =
+    body.custom_rate_unit === "pax" ? "pax" :
+    body.custom_rate_unit === "flat" ? "flat" :
+    body.custom_rate_unit === "hr" ? "hr" :
+    undefined;
+
+  if (custom_day_rate !== undefined) updates.custom_day_rate = custom_day_rate;
+  if (custom_night_rate !== undefined) updates.custom_night_rate = custom_night_rate;
+  if (custom_rate_unit !== undefined) updates.custom_rate_unit = custom_rate_unit;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

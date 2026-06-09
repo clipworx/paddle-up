@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const supabase = getServerSupabase();
   let query = supabase
     .from("courts")
-    .select("id, name, description, is_active, location_id, parent_court_id")
+    .select("id, name, description, is_active, location_id, parent_court_id, custom_day_rate, custom_night_rate, custom_rate_unit")
     .eq("is_active", true)
     .order("name");
 

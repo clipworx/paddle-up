@@ -79,7 +79,7 @@ export async function POST(req: Request) {
   // Fetch court + location info; verify location is active and subscription is valid
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, is_active, parent_court_id, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days)")
+    .select("name, location_id, is_active, parent_court_id, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking)")
     .eq("id", court_id)
     .single();
 
@@ -91,6 +91,11 @@ export async function POST(req: Request) {
     payment_account_number: string | null;
     subscription_due_date: string | null;
     subscription_grace_days: number;
+    night_start_time: string;
+    weekend_night_start_time: string;
+    require_downpayment: boolean;
+    downpayment_min_hours: number;
+    no_split_rate_booking: boolean;
   } | null;
 
   if (!courtRow?.is_active || !loc?.is_active) {
@@ -106,6 +111,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "location_subscription_expired" }, { status: 409 });
     }
   }
+
+  // ── Booking policy checks ─────────────────────────────────────────────────
+  // Determine if date is a weekend for correct night_start
+  const [bY, bM, bD] = (date as string).split("-").map(Number);
+  const dow = new Date(bY, bM - 1, bD).getDay();
+  const isWeekend = dow === 0 || dow === 6;
+  const nightStartStr = isWeekend
+    ? (loc.weekend_night_start_time ?? "18:00:00")
+    : (loc.night_start_time ?? "18:00:00");
+  const nightStartH = parseInt(nightStartStr.slice(0, 2), 10);
+
+  const bookingStartH = parseInt((start_time as string).slice(0, 2), 10);
+  const bookingEndH   = (end_time as string) === "00:00" ? 24 : parseInt((end_time as string).slice(0, 2), 10);
+  const durationH     = bookingEndH - bookingStartH;
+
+  // No-split-rate: booking must not cross the day→night boundary
+  if (loc.no_split_rate_booking) {
+    const startsInDay  = bookingStartH < nightStartH;
+    const endsInNight  = bookingEndH   > nightStartH;
+    if (startsInDay && endsInNight) {
+      return NextResponse.json({ error: "split_rate_not_allowed" }, { status: 409 });
+    }
+  }
+
+  // Down-payment flag — passed back to client, no server enforcement needed
+  const requiresDownpayment =
+    (loc.require_downpayment ?? false) && durationH > (loc.downpayment_min_hours ?? 3);
 
   // ── Parent/child conflict check ───────────────────────────────────────────
   // Booking a parent blocks all its children; booking a child blocks the parent.
@@ -197,5 +229,7 @@ export async function POST(req: Request) {
     payment_qr_url: loc?.payment_qr_url ?? null,
     payment_account_name: loc?.payment_account_name ?? null,
     payment_account_number: loc?.payment_account_number ?? null,
+    requires_downpayment: requiresDownpayment,
+    downpayment_min_hours: loc?.downpayment_min_hours ?? 3,
   }, { status: 201 });
 }

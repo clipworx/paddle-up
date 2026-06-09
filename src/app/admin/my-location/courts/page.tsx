@@ -19,6 +19,9 @@ export default function CourtsPage() {
     name: string;
     description: string;
     parent_court_id: string | null;
+    custom_day_rate: string;
+    custom_night_rate: string;
+    custom_rate_unit: "hr" | "pax" | "flat";
   } | null>(null);
   const [editCourtSaving, setEditCourtSaving] = useState(false);
   const [editCourtError, setEditCourtError] = useState<string | null>(null);
@@ -110,6 +113,9 @@ export default function CourtsPage() {
           name: editCourt.name,
           description: editCourt.description,
           parent_court_id: editCourt.parent_court_id,
+          custom_day_rate:   editCourt.custom_day_rate   !== "" ? parseFloat(editCourt.custom_day_rate)   : null,
+          custom_night_rate: editCourt.custom_night_rate !== "" ? parseFloat(editCourt.custom_night_rate) : null,
+          custom_rate_unit:  editCourt.custom_rate_unit,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -201,6 +207,22 @@ export default function CourtsPage() {
                       {court.description && (
                         <p className="text-xs text-muted mt-0.5 truncate">{court.description}</p>
                       )}
+                      {(court.custom_day_rate != null || court.custom_night_rate != null) && (() => {
+                        const u = court.custom_rate_unit ?? "hr";
+                        const unitLabel = u === "pax" ? "/pax" : u === "flat" ? " flat" : "/hr";
+                        return (
+                          <p className="text-[11px] text-accent font-semibold mt-0.5">
+                            Custom rate:{" "}
+                            {u === "flat"
+                              ? `₱${court.custom_day_rate} flat fee`
+                              : [
+                                  court.custom_day_rate != null && `₱${court.custom_day_rate}${unitLabel} day`,
+                                  court.custom_night_rate != null && `₱${court.custom_night_rate}${unitLabel} night`,
+                                ].filter(Boolean).join(" · ")
+                            }
+                          </p>
+                        );
+                      })()}
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
@@ -209,6 +231,9 @@ export default function CourtsPage() {
                           name: court.name,
                           description: court.description ?? "",
                           parent_court_id: court.parent_court_id,
+                          custom_day_rate: court.custom_day_rate != null ? String(court.custom_day_rate) : "",
+                          custom_night_rate: court.custom_night_rate != null ? String(court.custom_night_rate) : "",
+                          custom_rate_unit: court.custom_rate_unit ?? "hr",
                         })}
                         className="rounded-lg border border-border px-3 py-1.5 min-h-11 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
                       >
@@ -369,6 +394,83 @@ export default function CourtsPage() {
                 If this court shares physical space with a larger court, select that court as the parent. Booking the parent will block this court and vice versa.
               </p>
             </label>
+
+            {/* Custom rates */}
+            <div className="space-y-2">
+              <span className="text-xs uppercase tracking-wide text-muted font-semibold block">
+                Custom rates <span className="normal-case font-normal">(leave blank to use location default)</span>
+              </span>
+
+              {/* Rate unit */}
+              <div>
+                <span className="text-[11px] text-muted block mb-1">Pricing unit</span>
+                <div className="flex gap-2">
+                  {([
+                    { value: "hr",   label: "/hr",   desc: "Per hour" },
+                    { value: "pax",  label: "/pax",  desc: "Per person" },
+                    { value: "flat", label: "Flat",  desc: "Fixed fee" },
+                  ] as const).map(({ value, label, desc }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setEditCourt({ ...editCourt, custom_rate_unit: value })}
+                      className={`flex-1 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                        editCourt.custom_rate_unit === value
+                          ? "bg-accent/15 border-accent text-accent"
+                          : "border-border text-muted hover:border-accent/50"
+                      }`}
+                    >
+                      <span className="block text-[13px]">{label}</span>
+                      <span className="block font-normal text-[10px] mt-0.5 opacity-70">{desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Rate inputs — hide night rate for flat since it's a single fee */}
+              <div className={`flex gap-3 ${editCourt.custom_rate_unit === "flat" ? "" : ""}`}>
+                <label className="flex-1 space-y-1">
+                  <span className="text-[11px] text-muted">
+                    {editCourt.custom_rate_unit === "flat" ? "Fee (₱)" : `Day rate (₱${editCourt.custom_rate_unit === "pax" ? "/pax" : "/hr"})`}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={editCourt.custom_day_rate}
+                    onChange={(e) => setEditCourt({ ...editCourt, custom_day_rate: e.target.value })}
+                    placeholder={location ? String(location.day_rate) : "—"}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[16px] sm:text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent"
+                  />
+                </label>
+                {editCourt.custom_rate_unit !== "flat" && (
+                  <label className="flex-1 space-y-1">
+                    <span className="text-[11px] text-muted">
+                      {`Night rate (₱${editCourt.custom_rate_unit === "pax" ? "/pax" : "/hr"})`}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={editCourt.custom_night_rate}
+                      onChange={(e) => setEditCourt({ ...editCourt, custom_night_rate: e.target.value })}
+                      placeholder={location ? String(location.night_rate) : "—"}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[16px] sm:text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {(editCourt.custom_day_rate !== "" || editCourt.custom_night_rate !== "") && (
+                <button
+                  type="button"
+                  onClick={() => setEditCourt({ ...editCourt, custom_day_rate: "", custom_night_rate: "", custom_rate_unit: "hr" })}
+                  className="text-[11px] text-accent hover:underline"
+                >
+                  Clear — use location default
+                </button>
+              )}
+            </div>
 
             {editCourtError && (
               <p className="text-sm text-accent font-semibold">{editCourtError}</p>

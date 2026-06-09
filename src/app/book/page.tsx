@@ -22,6 +22,7 @@ type BookingForm = {
   booker_phone: string;
   booker_email: string;
   notes: string;
+  player_count: number;
 };
 
 type ConfirmedBooking = {
@@ -36,6 +37,8 @@ type ConfirmedBooking = {
   paymentAccountName: string | null;
   paymentAccountNumber: string | null;
   bookingId: string;
+  requiresDownpayment: boolean;
+  downpaymentAmount: number;
 };
 
 type PublicAnnouncement = {
@@ -114,16 +117,43 @@ function isWeekend(dateIso: string): boolean {
   return dow === 0 || dow === 6;
 }
 
-function calcPrice(loc: Location, startIdx: number, endIdx: number, dateIso: string): number {
+function calcPrice(
+  loc: Location,
+  startIdx: number,
+  endIdx: number,
+  dateIso: string,
+  court?: Court | null,
+  playerCount = 4,
+): number {
+  const hasCustom = court != null && (court.custom_day_rate != null || court.custom_night_rate != null);
+  const unit = hasCustom ? (court!.custom_rate_unit ?? "hr") : "hr";
+
+  // flat: fixed fee regardless of hours/players
+  if (unit === "flat") {
+    return court?.custom_day_rate ?? loc.day_rate;
+  }
+
   const weekend = isWeekend(dateIso);
   const nightHour = parseInt(
     (weekend ? loc.weekend_night_start_time : loc.night_start_time).slice(0, 2),
     10
   );
+  const dayRate   = court?.custom_day_rate   ?? loc.day_rate;
+  const nightRate = court?.custom_night_rate ?? loc.night_rate;
+
+  // pax: per-person flat fee (one charge total, not per hour)
+  if (unit === "pax") {
+    // Use the rate that applies to the start slot
+    const startH = parseInt(TIME_SLOTS[startIdx].start.slice(0, 2), 10);
+    const rate = startH >= nightHour ? nightRate : dayRate;
+    return rate * playerCount;
+  }
+
+  // hr (default): per hour
   let total = 0;
   for (let i = startIdx; i <= endIdx; i++) {
     const hour = parseInt(TIME_SLOTS[i].start.slice(0, 2), 10);
-    total += hour >= nightHour ? loc.night_rate : loc.day_rate;
+    total += hour >= nightHour ? nightRate : dayRate;
   }
   return total;
 }
@@ -230,6 +260,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     booker_phone: "",
     booker_email: "",
     notes: "",
+    player_count: 4,
   });
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -354,6 +385,14 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   // Last valid end slot within operating hours, not crossing a booked or blocked slot
   function maxEndIdx(courtId: string, startIdx: number): number {
     const court = courts.find((c) => c.id === courtId);
+    // If split-rate bookings are blocked and start is in the day period, cap at the night boundary
+    if (selectedLocation?.no_split_rate_booking && startIdx < nightHour) {
+      const cap = nightHour - 1;
+      for (let i = startIdx; i <= cap; i++) {
+        if (court && isSlotUnavailable(courts, bookings, court, i)) return i - 1;
+      }
+      return cap;
+    }
     for (let i = startIdx; i < closeH; i++) {
       if (court && isSlotUnavailable(courts, bookings, court, i)) return i - 1;
     }
@@ -374,6 +413,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       booker_phone: "",
       booker_email: "",
       notes: "",
+      player_count: 4,
     });
     setFormError(null);
     setShowModal(true);
@@ -427,7 +467,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
         booker_name: form.booker_name,
         booker_phone: form.booker_phone,
         booker_email: form.booker_email || null,
-        player_count: 4,
+        player_count: form.player_count,
         notes: form.notes || null,
       }),
     });
@@ -443,13 +483,15 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
         phone_invalid: "Enter a valid Philippine mobile number (e.g. 09171234567).",
         valid_email_required: "Enter a valid email address.",
         missing_fields: "Please fill in all required fields.",
+        split_rate_not_allowed: "This location does not allow bookings that span the day and night rate. Please book day and night slots separately.",
       };
       setFormError(msgs[json.error] ?? json.error ?? "Booking failed.");
       return;
     }
 
     const courtName = courts.find((c) => c.id === form.court_id)?.name ?? "";
-    const totalPrice = calcPrice(selectedLocation, form.startIdx, form.endIdx, date);
+    const bookedCourt = courts.find((c) => c.id === form.court_id);
+    const totalPrice = calcPrice(selectedLocation, form.startIdx, form.endIdx, date, bookedCourt, form.player_count);
     setConfirmed({
       courtName,
       locationName: selectedLocation.name,
@@ -462,6 +504,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       paymentAccountName: json.payment_account_name ?? null,
       paymentAccountNumber: json.payment_account_number ?? null,
       bookingId: json.booking?.id ?? "",
+      requiresDownpayment: json.requires_downpayment ?? false,
+      downpaymentAmount: totalPrice / 2,
     });
     setShowModal(false);
     fetchBookings(date);
@@ -505,8 +549,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const modalCourt = courts.find((c) => c.id === form.court_id);
   const validMax = maxEndIdx(form.court_id, form.startIdx);
   const totalPrice = selectedLocation
-    ? calcPrice(selectedLocation, form.startIdx, form.endIdx, date)
+    ? calcPrice(selectedLocation, form.startIdx, form.endIdx, date, modalCourt, form.player_count)
     : 0;
+  const isPaxCourt = (modalCourt?.custom_rate_unit ?? "hr") === "pax" && modalCourt?.custom_day_rate != null;
+  const durationHours = form.endIdx - form.startIdx + 1;
+  const showDownpaymentNotice = selectedLocation?.require_downpayment &&
+    durationHours > (selectedLocation?.downpayment_min_hours ?? 3);
 
   // Available start indices for the selected court within operating hours
   const availableStarts = visibleSlotIndices.filter((i) => {
@@ -580,7 +628,17 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 <p className="text-sm text-muted">{confirmed.rangeLabel} · {displayDate(confirmed.date)}</p>
                 <div className="flex items-center justify-between pt-1">
                   {confirmed.totalPrice > 0 && (
-                    <p className="font-bold text-accent text-lg">₱{confirmed.totalPrice.toFixed(2)}</p>
+                    <div>
+                      {confirmed.requiresDownpayment ? (
+                        <>
+                          <p className="text-[11px] text-muted font-semibold uppercase tracking-wide">Down payment due now</p>
+                          <p className="font-bold text-accent text-lg">₱{confirmed.downpaymentAmount.toFixed(2)}</p>
+                          <p className="text-[11px] text-muted">Balance on arrival: ₱{confirmed.downpaymentAmount.toFixed(2)}</p>
+                        </>
+                      ) : (
+                        <p className="font-bold text-accent text-lg">₱{confirmed.totalPrice.toFixed(2)}</p>
+                      )}
+                    </div>
                   )}
                   <p className="text-xs text-muted font-mono">Ref: {confirmed.bookingId.slice(0, 8).toUpperCase()}</p>
                 </div>
@@ -888,6 +946,21 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                               shared space
                             </div>
                           )}
+                          {hasPricing && (court.custom_day_rate != null || court.custom_night_rate != null) && (() => {
+                            const u = court.custom_rate_unit ?? "hr";
+                            const ul = u === "pax" ? "/pax" : u === "flat" ? " flat" : "/hr";
+                            return (
+                              <div className="text-[10px] text-accent font-semibold mt-0.5 normal-case tracking-normal">
+                                {u === "flat"
+                                  ? `₱${court.custom_day_rate?.toFixed(0)} flat`
+                                  : [
+                                      court.custom_day_rate != null && `₱${court.custom_day_rate.toFixed(0)}${ul}`,
+                                      court.custom_night_rate != null && `₱${court.custom_night_rate.toFixed(0)}${ul} night`,
+                                    ].filter(Boolean).join(" · ")
+                                }
+                              </div>
+                            );
+                          })()}
                         </th>
                       ))}
                     </tr>
@@ -1136,6 +1209,32 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 </label>
               </div>
 
+              {/* Split-rate policy notice */}
+              {selectedLocation?.no_split_rate_booking && hasPricing && (
+                <div className="rounded-xl bg-surface border border-border px-4 py-3 space-y-1">
+                  <p className="text-[12px] font-bold text-foreground uppercase tracking-wide">Day &amp; Night booking policy</p>
+                  <p className="text-[13px] text-muted leading-snug">
+                    This court has separate day and night rates. Bookings cannot span the{" "}
+                    <span className="font-semibold text-foreground">{fmtHour(nightHour)}</span> rate change —
+                    please make two separate bookings if you need time on both sides.
+                  </p>
+                  <div className="flex gap-4 pt-1 flex-wrap">
+                    {(() => {
+                      const u = modalCourt?.custom_rate_unit ?? "hr";
+                      const ul = u === "pax" ? "/pax" : u === "flat" ? " flat" : "/hr";
+                      const dr = (modalCourt?.custom_day_rate   ?? selectedLocation.day_rate).toFixed(0);
+                      const nr = (modalCourt?.custom_night_rate ?? selectedLocation.night_rate).toFixed(0);
+                      return (
+                        <>
+                          <span className="text-[12px] text-muted">☀︎ Day: <span className="font-semibold text-foreground">₱{dr}{ul}</span></span>
+                          {u !== "flat" && <span className="text-[12px] text-muted">☽ Night <span className="font-normal">(from {fmtHour(nightHour)})</span>: <span className="font-semibold text-foreground">₱{nr}{ul}</span></span>}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
               {/* Duration + price summary */}
               <div className="flex items-center justify-between rounded-xl bg-surface px-4 py-3">
                 <div>
@@ -1153,7 +1252,56 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 )}
               </div>
 
+              {showDownpaymentNotice && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                  <p className="text-[13px] font-semibold text-amber-800">
+                    50% down payment required — ₱{(totalPrice / 2).toFixed(2)}
+                  </p>
+                  <p className="text-[12px] text-amber-700 mt-0.5">
+                    Bookings over {selectedLocation?.downpayment_min_hours ?? 3} hours require a 50% down payment. The remaining balance is due on arrival. Note: the down payment is non-refundable if the booking is cancelled.
+                  </p>
+                </div>
+              )}
+
               <div className="border-t border-border pt-4 space-y-4">
+                {/* Player count — only shown for /pax courts */}
+                {isPaxCourt && (
+                  <div className="space-y-1.5">
+                    <span className="text-xs uppercase tracking-wide text-muted font-semibold block">
+                      Number of players <span className="text-accent">*</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, player_count: Math.max(1, f.player_count - 1) }))}
+                        className="w-9 h-9 rounded-lg border border-border text-foreground text-lg font-bold hover:bg-accent/10 hover:border-accent transition-colors shrink-0"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        value={form.player_count}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value);
+                          if (!isNaN(v) && v >= 1) setForm((f) => ({ ...f, player_count: v }));
+                        }}
+                        className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-base text-center font-semibold text-foreground focus:outline-none focus:border-accent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, player_count: f.player_count + 1 }))}
+                        className="w-9 h-9 rounded-lg border border-border text-foreground text-lg font-bold hover:bg-accent/10 hover:border-accent transition-colors shrink-0"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted">
+                      ₱{(modalCourt?.custom_day_rate ?? 0).toFixed(0)} × {form.player_count} {form.player_count === 1 ? "person" : "people"} = ₱{totalPrice.toFixed(2)}
+                    </p>
+                  </div>
+                )}
+
                 {/* Name */}
                 <label className="block space-y-1.5">
                   <span className="text-xs uppercase tracking-wide text-muted font-semibold">

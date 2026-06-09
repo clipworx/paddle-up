@@ -110,6 +110,10 @@ export type Location = {
   // Subscription
   subscription_due_date: string | null;   // YYYY-MM-DD, null = no subscription enforced
   subscription_grace_days: number;         // days after due before deactivation (default 7)
+  // Booking policies
+  require_downpayment: boolean;            // require 50% down for long bookings
+  downpayment_min_hours: number;           // threshold in hours (default 3)
+  no_split_rate_booking: boolean;          // block bookings spanning day/night boundary
 };
 
 export type Court = {
@@ -118,6 +122,9 @@ export type Court = {
   description: string | null;
   is_active: boolean;
   location_id: string;
+  custom_day_rate: number | null;    // null = use location rate
+  custom_night_rate: number | null;  // null = use location rate
+  custom_rate_unit: "hr" | "pax" | "flat"; // how the custom rate is charged
   parent_court_id: string | null;
 };
 
