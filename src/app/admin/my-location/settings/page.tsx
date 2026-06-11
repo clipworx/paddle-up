@@ -88,6 +88,12 @@ export default function SettingsPage() {
   const [logoError, setLogoError] = useState<string | null>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
 
+  // Facility photo state
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoFileRef = useRef<HTMLInputElement>(null);
+
   // Color state
   const [colorSaving, setColorSaving] = useState(false);
   const [colorError, setColorError] = useState<string | null>(null);
@@ -271,6 +277,36 @@ export default function SettingsPage() {
   async function onRemoveLogo() {
     if (!location || !confirm("Remove logo?")) return;
     await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}/logo`, { method: "DELETE" });
+    if (me?.location_id) loadLocation(me.location_id);
+  }
+
+  async function onUploadPhoto(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!location || !photoFile) return;
+    setPhotoUploading(true);
+    setPhotoError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", photoFile);
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}/photo`, {
+        method: "POST",
+        body: fd,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+      setPhotoFile(null);
+      if (photoFileRef.current) photoFileRef.current.value = "";
+      if (me?.location_id) loadLocation(me.location_id);
+    } catch (err) {
+      setPhotoError((err as Error).message);
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
+  async function onRemovePhoto() {
+    if (!location || !confirm("Remove facility photo?")) return;
+    await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}/photo`, { method: "DELETE" });
     if (me?.location_id) loadLocation(me.location_id);
   }
 
@@ -592,6 +628,54 @@ export default function SettingsPage() {
                 className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
               >
                 {logoUploading ? "Uploading…" : "Save logo"}
+              </button>
+            </form>
+          </div>
+
+          {/* Facility photo */}
+          <div className="rounded-xl border border-border bg-background p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">Facility photo</h2>
+                <p className="text-xs text-muted mt-1">
+                  {location?.photo_url
+                    ? "Shown as the cover image on the booking page."
+                    : "Upload a photo of your courts to make the booking page more inviting."}
+                </p>
+              </div>
+              {location?.photo_url && (
+                <button onClick={onRemovePhoto} className="shrink-0 text-xs font-semibold text-accent hover:underline">
+                  Remove
+                </button>
+              )}
+            </div>
+
+            {location?.photo_url && (
+              <div className="rounded-xl overflow-hidden border border-border">
+                <img src={location.photo_url} alt="Facility" className="w-full h-40 object-cover" />
+              </div>
+            )}
+
+            <form onSubmit={onUploadPhoto} className="space-y-3 rounded-xl border border-border bg-surface p-4">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+                {location?.photo_url ? "Replace photo" : "Upload photo"}
+              </p>
+              <input
+                ref={photoFileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                required
+                onChange={(e) => { setPhotoFile(e.target.files?.[0] ?? null); setPhotoError(null); }}
+                className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent/10 file:text-accent file:font-semibold file:px-3 file:py-1.5 file:text-xs hover:file:bg-accent/20 transition-colors"
+              />
+              <p className="text-[11px] text-muted">JPEG, PNG, WebP or GIF · max 8 MB. Use a wide landscape photo for best results.</p>
+              {photoError && <p className="text-xs text-accent font-semibold">{photoError}</p>}
+              <button
+                type="submit"
+                disabled={photoUploading || !photoFile}
+                className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+              >
+                {photoUploading ? "Uploading…" : "Save photo"}
               </button>
             </form>
           </div>

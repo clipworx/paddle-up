@@ -5,6 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { MapPin, Megaphone, CalendarDays } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { Footer } from "@/components/Footer";
 import type { Court, Booking, Location } from "@/lib/types";
 import { TIME_SLOTS } from "@/lib/types";
 import { applyTheme, clearTheme, themeVarsStyle } from "@/lib/themes";
@@ -165,6 +166,27 @@ function slotRangeLabel(startIdx: number, endIdx: number): string {
   return `${fmtHour(startH)} – ${fmtHour(endH)}`;
 }
 
+// ─── Court illustration SVG ───────────────────────────────────────────────────
+
+function CourtIllustration() {
+  return (
+    <svg viewBox="0 0 360 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+      {/* Outer boundary */}
+      <rect x="24" y="16" width="312" height="168" rx="3" stroke="white" strokeWidth="2.5" strokeOpacity="0.45"/>
+      {/* Net */}
+      <line x1="24" y1="100" x2="336" y2="100" stroke="white" strokeWidth="2.5" strokeOpacity="0.7"/>
+      {/* Center line */}
+      <line x1="180" y1="16" x2="180" y2="184" stroke="white" strokeWidth="1.5" strokeOpacity="0.35"/>
+      {/* Service lines */}
+      <line x1="104" y1="16" x2="104" y2="184" stroke="white" strokeWidth="1.5" strokeOpacity="0.3"/>
+      <line x1="256" y1="16" x2="256" y2="184" stroke="white" strokeWidth="1.5" strokeOpacity="0.3"/>
+      {/* Net posts */}
+      <circle cx="24"  cy="100" r="4" fill="white" fillOpacity="0.5"/>
+      <circle cx="336" cy="100" r="4" fill="white" fillOpacity="0.5"/>
+    </svg>
+  );
+}
+
 // ─── Location picker ──────────────────────────────────────────────────────────
 
 function LocationPicker({
@@ -175,64 +197,125 @@ function LocationPicker({
   onSelect: (loc: Location) => void;
 }) {
   return (
-    <div className="space-y-8 py-4">
-      <div className="text-center space-y-2">
-        <div className="inline-block rounded-full bg-accent/15 text-accent px-4 py-1 text-xs font-semibold uppercase tracking-widest">
-          Court Booking
+    <div className="space-y-0 -mt-8 -mx-4">
+      {/* Hero */}
+      <div className="relative overflow-hidden px-4 pt-16 pb-14 sm:pt-20 sm:pb-18 text-center">
+        {/* Background blobs */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full bg-accent/10 blur-3xl" />
+          <div className="absolute top-1/2 -left-24 w-72 h-72 rounded-full bg-accent/8 blur-3xl" />
         </div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Choose a location</h2>
-        <p className="text-sm text-muted">Select a facility to see available courts and time slots.</p>
+        <div className="relative">
+          <div className="inline-flex items-center gap-2 rounded-full bg-accent/15 text-accent px-4 py-1.5 text-xs font-semibold uppercase tracking-widest mb-5">
+            Court booking
+          </div>
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-foreground tracking-tight leading-[1.08] mb-4">
+            Find your court.<br />
+            <span className="text-accent">Book in seconds.</span>
+          </h1>
+          <p className="text-base sm:text-lg text-muted max-w-xl mx-auto leading-relaxed">
+            Browse available courts, pick a time slot, and confirm your booking — all from your phone.
+          </p>
+        </div>
       </div>
-      <div className={`grid gap-5 ${locations.length === 1 ? "max-w-sm mx-auto" : locations.length === 2 ? "sm:grid-cols-2 max-w-2xl mx-auto" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
-        {locations.map((loc) => (
-          <button
-            key={loc.id}
-            onClick={() => onSelect(loc)}
-            style={themeVarsStyle(loc.accent_color)}
-            className="text-left rounded-2xl border border-border bg-background p-6 shadow-sm hover:shadow-md hover:border-accent transition-all group"
-          >
-            <div className="flex items-start gap-4 mb-4">
-              {loc.logo_url ? (
-                <img
-                  src={loc.logo_url}
-                  alt={loc.name}
-                  className="h-14 w-14 object-contain rounded-xl border border-border bg-surface/50 shrink-0"
-                />
-              ) : (
-                <div className="h-14 w-14 rounded-xl border border-border bg-accent/10 flex items-center justify-center shrink-0">
-                  <span className="text-2xl font-bold text-accent">{loc.name.charAt(0)}</span>
-                </div>
-              )}
-              <div className="min-w-0 flex-1 pt-1">
-                <h3 className="text-base font-bold text-foreground group-hover:text-accent transition-colors leading-tight">
-                  {loc.name}
-                </h3>
-                {loc.address && (
-                  <p className="text-xs text-muted mt-0.5 leading-snug line-clamp-2">{loc.address}</p>
+
+      {/* Venue list */}
+      <div className="px-4 pb-12">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-[13px] font-bold text-muted uppercase tracking-widest">
+            {locations.length} {locations.length === 1 ? "venue" : "venues"} available
+          </h2>
+        </div>
+
+        <div className={`grid gap-5 ${
+          locations.length === 1 ? "max-w-sm" :
+          locations.length === 2 ? "sm:grid-cols-2 max-w-2xl" :
+          "sm:grid-cols-2 lg:grid-cols-3"
+        }`}>
+          {locations.map((loc) => (
+            <button
+              key={loc.id}
+              onClick={() => onSelect(loc)}
+              style={themeVarsStyle(loc.accent_color)}
+              className="group text-left rounded-2xl border border-border bg-background overflow-hidden shadow-sm hover:shadow-lg hover:border-accent/50 transition-all duration-200"
+            >
+              {/* Facility photo or court illustration */}
+              <div
+                className="relative h-44 overflow-hidden"
+                style={{ backgroundColor: loc.accent_color ?? "var(--color-accent)" }}
+              >
+                {loc.photo_url ? (
+                  <img
+                    src={loc.photo_url}
+                    alt={loc.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <CourtIllustration />
+                )}
+                {loc.logo_url && (
+                  <img
+                    src={loc.logo_url}
+                    alt=""
+                    className="absolute bottom-3 right-3 h-10 w-10 rounded-xl object-contain bg-white/20 backdrop-blur-sm p-1"
+                  />
                 )}
               </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap mb-3">
-              <span className="rounded-full bg-accent/15 text-accent px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-                {loc.court_count} {loc.court_count === 1 ? "court" : "courts"}
-              </span>
-              {(loc.day_rate > 0 || loc.night_rate > 0) && (
-                <span className="rounded-full bg-surface border border-border text-muted px-2.5 py-0.5 text-[10px] font-semibold">
-                  From ₱{Math.min(loc.day_rate, loc.night_rate || loc.day_rate).toFixed(0)}/hr
-                </span>
-              )}
-            </div>
-            {loc.description && (
-              <p className="text-sm text-muted leading-relaxed line-clamp-2 mb-4">{loc.description}</p>
-            )}
-            <div className="flex items-center justify-between pt-3 border-t border-border mt-auto">
-              <span className="text-xs font-semibold text-accent">Book a court</span>
-              <span className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent transition-colors shrink-0">
-                <span className="text-accent group-hover:text-background text-xs leading-none">→</span>
-              </span>
-            </div>
-          </button>
-        ))}
+
+              {/* Info */}
+              <div className="p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="text-[15px] font-bold text-foreground leading-snug group-hover:text-accent transition-colors">
+                    {loc.name}
+                  </h3>
+                </div>
+                {loc.address && (
+                  <p className="text-xs text-muted flex items-center gap-1 leading-snug">
+                    <MapPin size={11} className="shrink-0 mt-px" />
+                    {loc.address}
+                  </p>
+                )}
+                {loc.description && (
+                  <p className="text-xs text-muted line-clamp-2 leading-relaxed">{loc.description}</p>
+                )}
+                <div className="flex items-center justify-between border-t border-border pt-3 mt-2">
+                  <span className="text-xs text-muted flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-accent inline-block" />
+                    {loc.court_count} {loc.court_count === 1 ? "court" : "courts"}
+                  </span>
+                  {(loc.day_rate > 0 || loc.night_rate > 0) ? (
+                    <span className="text-sm font-bold text-foreground">
+                      ₱{Math.min(loc.day_rate, loc.night_rate || loc.day_rate).toFixed(0)}
+                      <span className="text-xs font-normal text-muted">/hr</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-accent">Book now →</span>
+                  )}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* How it works strip */}
+      <div className="border-t border-border bg-background px-4 py-10">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-[13px] font-bold text-muted uppercase tracking-widest text-center mb-8">How it works</h2>
+          <div className="grid sm:grid-cols-3 gap-8">
+            {[
+              { n: "01", title: "Choose a venue", body: "Browse all available locations and compare courts and rates." },
+              { n: "02", title: "Pick your slot", body: "Select a court and time on the live availability grid." },
+              { n: "03", title: "Confirm & play", body: "Fill in your details, pay if required, and you're ready." },
+            ].map((step) => (
+              <div key={step.n} className="text-center sm:text-left">
+                <div className="font-mono text-3xl font-black text-accent/20 leading-none mb-2 select-none">{step.n}</div>
+                <h3 className="text-[14px] font-bold text-foreground mb-1">{step.title}</h3>
+                <p className="text-sm text-muted leading-relaxed">{step.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -568,37 +651,45 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       {/* ── Nav ── */}
       <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
         <div className="mx-auto max-w-6xl w-full px-4 h-14 flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 shrink-0 mr-2">
-            <Logo size={28} />
-            <span className="text-sm font-bold text-foreground hidden sm:block">Paddle Up</span>
+          <Link href="/book" className="flex items-center gap-2 shrink-0">
+            <Logo size={30} />
+            <span className="text-[15px] font-extrabold text-foreground tracking-tight hidden sm:block">
+              Re<span className="text-accent">Z</span>erve
+            </span>
           </Link>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {selectedLocation && (
-              <>
-                <span className="text-sm text-muted hidden sm:inline truncate">{selectedLocation.name}</span>
-                <span className="text-border hidden sm:inline mx-1">·</span>
-                <span className="rounded-full bg-accent/15 text-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest hidden sm:inline-block shrink-0">
-                  Court Booking
-                </span>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-4 shrink-0">
+          {!selectedLocation && (
+            <Link
+              href="/play"
+              className="hidden sm:block text-xs font-semibold text-muted hover:text-foreground transition-colors ml-2"
+            >
+              Open Play ↗
+            </Link>
+          )}
+
+          {/* Location crumb when selected */}
+          {selectedLocation && (
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-border mx-1">·</span>
+              <span className="text-sm font-semibold text-foreground truncate">{selectedLocation.name}</span>
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-3 shrink-0">
             {selectedLocation?.latitude && selectedLocation?.longitude && (
               <button
                 onClick={() => setShowMap(true)}
-                className="flex items-center gap-1 text-sm font-semibold text-muted hover:text-foreground transition-colors"
+                className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:border-accent/50 transition-colors"
               >
-                <MapPin size={13} />
+                <MapPin size={12} />
                 Map
               </button>
             )}
             {selectedLocation && !initialSlug && (locations?.length ?? 0) > 1 && (
               <button
                 onClick={() => { setSelectedLocation(null); setCourts([]); setBookings([]); }}
-                className="text-sm font-semibold text-muted hover:text-foreground transition-colors"
+                className="flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:border-accent/50 transition-colors"
               >
-                ← Locations
+                ← All locations
               </button>
             )}
           </div>
@@ -1407,6 +1498,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       )}
 
       </main>
+
+      <Footer />
 
       {/* Map modal */}
       {showMap && selectedLocation?.latitude && selectedLocation?.longitude && (

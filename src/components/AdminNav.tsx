@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: "Locations", href: "/admin/locations" },
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Admins", href: "/admin/admins" },
+  { label: "Settings", href: "/admin/settings" },
 ] as const;
 
 export function AdminNav({ onLogout }: Props) {
@@ -24,7 +25,7 @@ export function AdminNav({ onLogout }: Props) {
         {/* Brand */}
         <Link href="/admin" className="flex items-center gap-2 shrink-0 mr-2">
           <Logo size={28} />
-          <span className="text-sm font-bold text-foreground hidden sm:block">Paddle Up</span>
+          <span className="text-sm font-bold text-foreground hidden sm:block">ReZerve</span>
         </Link>
 
         {/* Nav links */}

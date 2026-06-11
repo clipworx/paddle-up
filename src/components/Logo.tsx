@@ -13,18 +13,32 @@ export function Logo({ size = 48, className }: Props) {
       className={className}
       aria-hidden="true"
     >
-      <rect width="64" height="64" rx="14" fill="#4B2E2B" />
-      <circle cx="32" cy="32" r="22" fill="#C08552" />
-      <g fill="#4B2E2B">
-        <circle cx="23" cy="23" r="2.4" />
-        <circle cx="32" cy="20" r="2.4" />
-        <circle cx="41" cy="23" r="2.4" />
-        <circle cx="20" cy="32" r="2.4" />
-        <circle cx="32" cy="32" r="2.4" />
-        <circle cx="44" cy="32" r="2.4" />
-        <circle cx="23" cy="41" r="2.4" />
-        <circle cx="32" cy="44" r="2.4" />
-        <circle cx="41" cy="41" r="2.4" />
+      {/* Background */}
+      <rect width="64" height="64" rx="14" fill="var(--color-accent, #c08552)" />
+
+      {/* Subtle inner glow ring */}
+      <rect x="3" y="3" width="58" height="58" rx="12" fill="none" stroke="white" strokeOpacity="0.15" strokeWidth="1.5" />
+
+      {/* R */}
+      <g fill="white">
+        {/* R — vertical stem */}
+        <rect x="12" y="16" width="5" height="32" rx="1.5" />
+        {/* R — top bowl */}
+        <path d="M17 16 h8 a8 8 0 0 1 0 16 h-8 z" />
+        {/* R — bowl fill (accent-over-accent to cut the bowl) */}
+        <rect x="17" y="19" width="7" height="10" rx="3" fill="var(--color-accent, #c08552)" />
+        {/* R — leg */}
+        <path d="M22 32 L31 48" stroke="white" strokeWidth="5" strokeLinecap="round" fill="none" />
+      </g>
+
+      {/* Z */}
+      <g fill="white">
+        {/* Z — top bar */}
+        <rect x="33" y="16" width="19" height="5" rx="2" />
+        {/* Z — bottom bar */}
+        <rect x="33" y="43" width="19" height="5" rx="2" />
+        {/* Z — diagonal */}
+        <path d="M50 18 L34 46" stroke="white" strokeWidth="5" strokeLinecap="round" fill="none" />
       </g>
     </svg>
   );

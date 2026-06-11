@@ -54,7 +54,7 @@ export function LocationAdminNav({ me, locationName, onLogout }: Props) {
             className="flex items-center gap-2.25 font-extrabold text-[19px] tracking-tight text-foreground shrink-0"
           >
             <Logo size={26} />
-            <span className="hidden sm:block">Paddle Up</span>
+            <span className="hidden sm:block">ReZerve</span>
             <span className="font-mono text-[10px] font-bold tracking-[.12em] uppercase text-muted bg-surface px-1.75 py-0.75 rounded-full ml-0.5 hidden sm:block">
               Admin
             </span>

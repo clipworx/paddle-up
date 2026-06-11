@@ -276,7 +276,7 @@ export default function SessionPage({
           .
         </p>
         <Link
-          href="/"
+          href="/play"
           className="inline-block rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors"
         >
           Back to start
@@ -289,10 +289,10 @@ export default function SessionPage({
     <>
       <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
         <div className="mx-auto max-w-6xl w-full px-4 h-14 flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 shrink-0 mr-2">
+          <Link href="/play" className="flex items-center gap-2 shrink-0 mr-2">
             <Logo size={28} />
             <span className="text-sm font-bold text-foreground hidden sm:block">
-              Paddle Up
+              ReZerve
             </span>
           </Link>
           <div className="flex items-center gap-2 flex-1 min-w-0">

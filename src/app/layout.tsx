@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Paddle Up",
-  description: "Pickleball open play rotation and scoreboard.",
+  title: "ReZerve",
+  description: "Court booking and management platform.",
 };
 
 export default function RootLayout({

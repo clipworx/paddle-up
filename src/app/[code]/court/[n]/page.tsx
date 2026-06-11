@@ -181,7 +181,7 @@ export default function CourtScoringPage({
       <main className="mx-auto max-w-xl w-full px-4 py-16 text-center space-y-4">
         <h1 className="text-2xl font-bold text-foreground">Session not found</h1>
         <Link
-          href="/"
+          href="/play"
           className="inline-block rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors"
         >
           Back to start

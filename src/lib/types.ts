@@ -107,6 +107,7 @@ export type Location = {
   // Branding
   logo_url: string | null;
   accent_color: string | null;
+  photo_url: string | null;
   // Subscription
   subscription_due_date: string | null;   // YYYY-MM-DD, null = no subscription enforced
   subscription_grace_days: number;         // days after due before deactivation (default 7)
