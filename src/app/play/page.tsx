@@ -127,12 +127,6 @@ export default function Landing() {
           >
             Book a Court
           </Link>
-          <Link
-            href="/admin"
-            className="text-sm font-semibold text-muted hover:text-accent transition-colors"
-          >
-            Admin
-          </Link>
         </div>
       </nav>
 

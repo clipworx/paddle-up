@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AdminNav } from "@/components/AdminNav";
+import { TIME_SLOTS } from "@/lib/types";
 import type { Booking, BookingStatus } from "@/lib/types";
 
 type BookingWithCourt = Booking & { court_name?: string | null };
@@ -117,12 +118,13 @@ function RefundDialog({ onConfirm, onClose }: {
   );
 }
 
-function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, confirming, cancelling, refunding, isPast }: {
+function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onReschedule, confirming, cancelling, refunding, isPast }: {
   booking: BookingWithCourt;
   onClose: () => void;
   onConfirm: (id: string) => void;
   onCancel: (id: string) => void;
   onRefund: (id: string) => void;
+  onReschedule: (b: BookingWithCourt) => void;
   confirming: boolean;
   cancelling: boolean;
   refunding: boolean;
@@ -170,7 +172,7 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, confirmi
         </div>
 
         {booking.status !== "cancelled" && booking.status !== "refunded" && (
-          <div className="flex gap-2 border-t border-border px-5 py-4">
+          <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
             {booking.status === "pending_payment" && !isPast && (
               <button
                 onClick={() => onConfirm(booking.id)}
@@ -178,6 +180,14 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, confirmi
                 className="flex-1 rounded-lg border border-green-400 bg-green-50 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
               >
                 {confirming ? "Confirming…" : "Confirm Payment"}
+              </button>
+            )}
+            {!isPast && (
+              <button
+                onClick={() => onReschedule(booking)}
+                className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+              >
+                Reschedule
               </button>
             )}
             {!isPast && (
@@ -227,6 +237,13 @@ export default function AdminBookingsPage() {
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<BookingWithCourt | null>(null);
   const [refundTarget, setRefundTarget] = useState<string | null>(null);
+
+  const [rescheduleTarget, setRescheduleTarget]         = useState<BookingWithCourt | null>(null);
+  const [rescheduleDate, setRescheduleDate]             = useState("");
+  const [rescheduleStartHour, setRescheduleStartHour]   = useState(0);
+  const [rescheduleEndHour, setRescheduleEndHour]       = useState(1);
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+  const [rescheduleError, setRescheduleError]           = useState<string | null>(null);
 
   const isPast = date < today;
 
@@ -307,6 +324,51 @@ export default function AdminBookingsPage() {
       alert((err as Error).message);
     } finally {
       setRefundingId(null);
+    }
+  }
+
+  function openReschedule(b: BookingWithCourt) {
+    const sh = parseInt(b.start_time.split(":")[0], 10);
+    const eh = parseInt(b.end_time.split(":")[0], 10);
+    setRescheduleTarget(b);
+    setRescheduleDate(b.date);
+    setRescheduleStartHour(sh);
+    setRescheduleEndHour(eh);
+    setRescheduleError(null);
+    setSelected(null);
+  }
+
+  async function onRescheduleSubmit() {
+    if (!rescheduleTarget) return;
+    setRescheduleSubmitting(true);
+    setRescheduleError(null);
+    try {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(rescheduleTarget.id)}/reschedule`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          date: rescheduleDate,
+          start_time: `${pad(rescheduleStartHour)}:00`,
+          end_time: `${pad(rescheduleEndHour)}:00`,
+        }),
+      });
+      if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg: Record<string, string> = {
+          slot_taken: "That time slot is already booked.",
+          cannot_reschedule: "This booking cannot be rescheduled.",
+          missing_fields: "Please fill in all required fields.",
+        };
+        throw new Error(msg[json.error] ?? json.error ?? "Failed to reschedule");
+      }
+      setRescheduleTarget(null);
+      await loadBookings(date);
+    } catch (err) {
+      setRescheduleError((err as Error).message);
+    } finally {
+      setRescheduleSubmitting(false);
     }
   }
 
@@ -455,6 +517,14 @@ export default function AdminBookingsPage() {
                           )}
                           {b.status !== "cancelled" && b.status !== "refunded" && !isPast && (
                             <button
+                              onClick={() => openReschedule(b)}
+                              className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                            >
+                              Reschedule
+                            </button>
+                          )}
+                          {b.status !== "cancelled" && b.status !== "refunded" && !isPast && (
+                            <button
                               onClick={() => onCancel(b.id)}
                               disabled={cancellingId === b.id}
                               className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
@@ -489,6 +559,7 @@ export default function AdminBookingsPage() {
           onConfirm={onConfirm}
           onCancel={onCancel}
           onRefund={(id) => { setSelected(null); setRefundTarget(id); }}
+          onReschedule={openReschedule}
           confirming={confirmingId === selected.id}
           cancelling={cancellingId === selected.id}
           refunding={refundingId === selected.id}
@@ -501,6 +572,67 @@ export default function AdminBookingsPage() {
           onConfirm={onRefundConfirm}
           onClose={() => setRefundTarget(null)}
         />
+      )}
+
+      {/* ── Reschedule modal ── */}
+      {rescheduleTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+          onClick={() => setRescheduleTarget(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-background shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <h3 className="text-base font-bold text-foreground">Reschedule booking</h3>
+                <p className="text-xs text-muted mt-0.5">{rescheduleTarget.court_name ?? rescheduleTarget.court_id} · {rescheduleTarget.booker_name}</p>
+              </div>
+              <button onClick={() => setRescheduleTarget(null)} className="text-muted hover:text-foreground text-lg leading-none">×</button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">New date</label>
+                <input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent" />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Start time</label>
+                  <select value={rescheduleStartHour}
+                    onChange={(e) => { const h = Number(e.target.value); setRescheduleStartHour(h); if (rescheduleEndHour <= h) setRescheduleEndHour(h + 1); }}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent">
+                    {TIME_SLOTS.slice(0, 23).map((s, i) => <option key={i} value={i}>{fmtTime(s.start)}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">End time</label>
+                  <select value={rescheduleEndHour} onChange={(e) => setRescheduleEndHour(Number(e.target.value))}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent">
+                    {TIME_SLOTS.slice(rescheduleStartHour + 1).map((s, i) => {
+                      const hour = rescheduleStartHour + 1 + i;
+                      return <option key={hour} value={hour}>{fmtTime(s.start)}</option>;
+                    })}
+                  </select>
+                </div>
+              </div>
+              {rescheduleError && <p className="text-sm text-red-600">{rescheduleError}</p>}
+            </div>
+            <div className="flex gap-2 border-t border-border px-5 py-4">
+              <button onClick={() => setRescheduleTarget(null)}
+                className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted hover:bg-accent/5 transition-colors">
+                Cancel
+              </button>
+              <button
+                disabled={rescheduleSubmitting || !rescheduleDate}
+                onClick={onRescheduleSubmit}
+                className="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                {rescheduleSubmitting ? "Saving…" : "Confirm reschedule"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

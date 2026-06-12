@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
-import { CalendarDays, MapPin, Megaphone, Settings, Users, ChevronRight, Shield, Clock } from "lucide-react";
+import { CalendarDays, MapPin, Megaphone, ChevronRight, Shield, Clock } from "lucide-react";
 
 const FEATURES = [
   {
@@ -30,11 +30,6 @@ const FEATURES = [
     Icon: Shield,
     title: "Booking policies",
     body: "Down payment options and rate-boundary rules give venues full control over how bookings work.",
-  },
-  {
-    Icon: Users,
-    title: "Open play rotation",
-    body: "Run structured open play sessions with automatic partner rotation, skill separation, and live scoring.",
   },
 ];
 
@@ -69,12 +64,6 @@ export default function HomePage() {
             </span>
           </Link>
           <div className="flex-1" />
-          <Link href="/play" className="text-sm font-semibold text-muted hover:text-foreground transition-colors hidden sm:block">
-            Open Play
-          </Link>
-          <Link href="/admin" className="text-sm font-semibold text-muted hover:text-foreground transition-colors hidden sm:block">
-            Admin
-          </Link>
           <Link
             href="/book"
             className="rounded-full bg-accent text-white px-4 py-2 text-sm font-semibold hover:opacity-90 transition-opacity"
@@ -110,12 +99,6 @@ export default function HomePage() {
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-accent text-white px-8 py-3.5 text-[15px] font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-accent/25"
               >
                 Find a court <ChevronRight size={16} />
-              </Link>
-              <Link
-                href="/play"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full border border-border text-foreground px-8 py-3.5 text-[15px] font-semibold hover:bg-background hover:border-accent/50 transition-colors"
-              >
-                Open play rotation
               </Link>
             </div>
           </div>
@@ -167,31 +150,6 @@ export default function HomePage() {
                 <p className="text-sm text-muted leading-relaxed">{body}</p>
               </div>
             ))}
-          </div>
-        </section>
-
-        {/* ── Admin CTA ── */}
-        <section className="bg-background border-t border-border">
-          <div className="mx-auto max-w-5xl px-4 py-16 sm:py-20">
-            <div className="rounded-2xl bg-accent/10 border border-accent/20 px-8 py-10 sm:py-12 flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div>
-                <div className="inline-block rounded-full bg-accent/15 text-accent px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest mb-3">
-                  For venue owners
-                </div>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">Manage your facility</h2>
-                <p className="text-sm text-muted mt-2 max-w-md leading-relaxed">
-                  Set up courts, configure rates and hours, manage bookings, post announcements, and track revenue — all from one dashboard.
-                </p>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3 shrink-0">
-                <Link
-                  href="/admin"
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-accent text-white px-6 py-3 text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
-                >
-                  <Settings size={15} /> Admin panel
-                </Link>
-              </div>
-            </div>
           </div>
         </section>
 

@@ -57,6 +57,13 @@ export default function BookingsPage() {
   const [adminBookingSubmitting, setAdminBookingSubmitting] = useState(false);
   const [adminBookingError, setAdminBookingError]           = useState<string | null>(null);
 
+  const [rescheduleTarget, setRescheduleTarget]         = useState<Booking | null>(null);
+  const [rescheduleDate, setRescheduleDate]             = useState("");
+  const [rescheduleStartHour, setRescheduleStartHour]   = useState(0);
+  const [rescheduleEndHour, setRescheduleEndHour]       = useState(1);
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+  const [rescheduleError, setRescheduleError]           = useState<string | null>(null);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const loadCourts = useCallback(async (locationId: string) => {
@@ -141,6 +148,50 @@ export default function BookingsPage() {
       loadBookings(page, statusFilter, search);
     } catch (err) { alert((err as Error).message); }
     finally { setConfirmingId(null); }
+  }
+
+  function openReschedule(b: Booking) {
+    const sh = parseInt(b.start_time.split(":")[0], 10);
+    const eh = parseInt(b.end_time.split(":")[0], 10);
+    setRescheduleTarget(b);
+    setRescheduleDate(b.date);
+    setRescheduleStartHour(sh);
+    setRescheduleEndHour(eh);
+    setRescheduleError(null);
+    setSelectedBooking(null);
+  }
+
+  async function onRescheduleSubmit() {
+    if (!rescheduleTarget) return;
+    setRescheduleSubmitting(true);
+    setRescheduleError(null);
+    try {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(rescheduleTarget.id)}/reschedule`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          date: rescheduleDate,
+          start_time: `${pad(rescheduleStartHour)}:00`,
+          end_time: `${pad(rescheduleEndHour)}:00`,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg: Record<string, string> = {
+          slot_taken: "That time slot is already booked.",
+          cannot_reschedule: "This booking cannot be rescheduled.",
+          missing_fields: "Please fill in all required fields.",
+        };
+        throw new Error(msg[json.error] ?? json.error ?? "Failed to reschedule");
+      }
+      setRescheduleTarget(null);
+      loadBookings(page, statusFilter, search);
+    } catch (err) {
+      setRescheduleError((err as Error).message);
+    } finally {
+      setRescheduleSubmitting(false);
+    }
   }
 
   return (
@@ -274,6 +325,14 @@ export default function BookingsPage() {
                                   className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
                                 >
                                   {confirmingId === b.id ? "…" : "Confirm"}
+                                </button>
+                              )}
+                              {b.status !== "cancelled" && b.status !== "refunded" && !past && (
+                                <button
+                                  onClick={() => openReschedule(b)}
+                                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                                >
+                                  Reschedule
                                 </button>
                               )}
                               {b.status !== "cancelled" && b.status !== "refunded" && !past && (
@@ -516,11 +575,17 @@ export default function BookingsPage() {
                 )}
               </div>
               {selectedBooking.status !== "cancelled" && selectedBooking.status !== "refunded" && (
-                <div className="flex gap-2 border-t border-border px-5 py-4">
+                <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
                   {selectedBooking.status === "pending_payment" && !past && (
                     <button onClick={() => onConfirmPayment(selectedBooking.id)} disabled={confirmingId === selectedBooking.id}
                       className="flex-1 rounded-lg border border-green-400 bg-green-50 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40">
                       {confirmingId === selectedBooking.id ? "Confirming…" : "Confirm Payment"}
+                    </button>
+                  )}
+                  {!past && (
+                    <button onClick={() => openReschedule(selectedBooking)}
+                      className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors">
+                      Reschedule
                     </button>
                   )}
                   {!past && (
@@ -541,6 +606,69 @@ export default function BookingsPage() {
           </div>
         );
       })()}
+
+      {/* ── Reschedule modal ── */}
+      {rescheduleTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-0 sm:px-4 py-0 sm:py-6"
+          onClick={() => setRescheduleTarget(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-xl overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[17px] font-bold text-foreground">Reschedule booking</h3>
+                <button onClick={() => setRescheduleTarget(null)} className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted hover:bg-surface">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-sm text-muted">{courtName(rescheduleTarget.court_id)} · {rescheduleTarget.booker_name}</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">New date</label>
+                  <input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent" />
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Start time</label>
+                    <select value={rescheduleStartHour}
+                      onChange={(e) => { const h = Number(e.target.value); setRescheduleStartHour(h); if (rescheduleEndHour <= h) setRescheduleEndHour(h + 1); }}
+                      className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
+                      {TIME_SLOTS.slice(0, 23).map((s, i) => <option key={i} value={i}>{fmtTime(s.start)}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">End time</label>
+                    <select value={rescheduleEndHour} onChange={(e) => setRescheduleEndHour(Number(e.target.value))}
+                      className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
+                      {TIME_SLOTS.slice(rescheduleStartHour + 1).map((s, i) => {
+                        const hour = rescheduleStartHour + 1 + i;
+                        return <option key={hour} value={hour}>{fmtTime(s.start)}</option>;
+                      })}
+                    </select>
+                  </div>
+                </div>
+                {rescheduleError && <p className="text-sm text-red-600">{rescheduleError}</p>}
+              </div>
+              <div className="flex gap-2.5 pt-1">
+                <button onClick={() => setRescheduleTarget(null)}
+                  className="rounded-full border border-border px-5 py-2.5 text-[14px] font-semibold text-foreground hover:bg-surface transition-colors">
+                  Cancel
+                </button>
+                <button
+                  disabled={rescheduleSubmitting || !rescheduleDate}
+                  onClick={onRescheduleSubmit}
+                  className="flex-1 rounded-full bg-accent text-white px-5 py-2.5 text-[14px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                  {rescheduleSubmitting ? "Saving…" : "Confirm reschedule"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Refund reason dialog ── */}
       {refundTarget && (
