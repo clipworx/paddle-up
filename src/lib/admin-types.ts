@@ -19,6 +19,7 @@ export type LocationInfo = {
   latitude: number | null;
   longitude: number | null;
   logo_url: string | null;
+  photo_url: string | null;
   accent_color: string | null;
   subscription_due_date: string | null;
   subscription_grace_days: number;
