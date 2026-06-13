@@ -7,7 +7,7 @@ export async function GET() {
   // Fetch active locations with their active court count
   const { data, error } = await supabase
     .from("locations")
-    .select("id, name, slug, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, courts(id)")
+    .select("id, name, slug, address, description, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, allow_half_hour_bookings, courts(id)")
     .eq("is_active", true)
     .order("name");
 
@@ -51,6 +51,7 @@ export async function GET() {
     require_downpayment: loc.require_downpayment ?? false,
     downpayment_min_hours: loc.downpayment_min_hours ?? 3,
     no_split_rate_booking: loc.no_split_rate_booking ?? false,
+    allow_half_hour_bookings: loc.allow_half_hour_bookings ?? false,
     court_count: Array.isArray(loc.courts) ? loc.courts.length : 0,
   }));
 

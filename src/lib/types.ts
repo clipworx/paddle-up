@@ -115,6 +115,7 @@ export type Location = {
   require_downpayment: boolean;            // require 50% down for long bookings
   downpayment_min_hours: number;           // threshold in hours (default 3)
   no_split_rate_booking: boolean;          // block bookings spanning day/night boundary
+  allow_half_hour_bookings: boolean;       // enable 30-min slot granularity
 };
 
 export type Court = {
@@ -168,6 +169,20 @@ export const TIME_SLOTS: TimeSlot[] = Array.from({ length: 24 }, (_, h) => ({
   end: h + 1 === 24 ? "00:00" : `${String(h + 1).padStart(2, "0")}:00`,
   label: `${fmtHour(h)} – ${fmtHour((h + 1) % 24)}`,
 }));
+
+// 30-minute slot grid — 48 slots of 30 minutes each.
+export const HALF_HOUR_SLOTS: TimeSlot[] = Array.from({ length: 48 }, (_, i) => {
+  const h = Math.floor(i / 2);
+  const m = (i % 2) * 30;
+  const nextI = i + 1;
+  const nextH = Math.floor(nextI / 2);
+  const nextM = (nextI % 2) * 30;
+  return {
+    start: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+    end: nextI >= 48 ? "00:00" : `${String(nextH).padStart(2, "0")}:${String(nextM).padStart(2, "0")}`,
+    label: "",
+  };
+});
 
 export const INITIAL_STATE: AppState = {
   players: [],

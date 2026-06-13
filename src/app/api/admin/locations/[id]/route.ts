@@ -81,7 +81,7 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown };
+  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -102,9 +102,10 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "slug_required" }, { status: 400 });
   }
 
-  const require_downpayment   = typeof body.require_downpayment   === "boolean" ? body.require_downpayment   : undefined;
-  const downpayment_min_hours = typeof body.downpayment_min_hours === "number"  ? body.downpayment_min_hours : undefined;
-  const no_split_rate_booking = typeof body.no_split_rate_booking === "boolean" ? body.no_split_rate_booking : undefined;
+  const require_downpayment    = typeof body.require_downpayment    === "boolean" ? body.require_downpayment    : undefined;
+  const downpayment_min_hours  = typeof body.downpayment_min_hours  === "number"  ? body.downpayment_min_hours  : undefined;
+  const no_split_rate_booking  = typeof body.no_split_rate_booking  === "boolean" ? body.no_split_rate_booking  : undefined;
+  const allow_half_hour_bookings = typeof body.allow_half_hour_bookings === "boolean" ? body.allow_half_hour_bookings : undefined;
 
   const updates: Record<string, unknown> = {};
   if (name !== null) updates.name = name;
@@ -115,7 +116,8 @@ export async function PUT(req: Request, { params }: Params) {
   if (slugRaw !== null) updates.slug = slugRaw;
   if (require_downpayment   !== undefined) updates.require_downpayment   = require_downpayment;
   if (downpayment_min_hours !== undefined) updates.downpayment_min_hours = downpayment_min_hours;
-  if (no_split_rate_booking !== undefined) updates.no_split_rate_booking = no_split_rate_booking;
+  if (no_split_rate_booking    !== undefined) updates.no_split_rate_booking    = no_split_rate_booking;
+  if (allow_half_hour_bookings !== undefined) updates.allow_half_hour_bookings = allow_half_hour_bookings;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

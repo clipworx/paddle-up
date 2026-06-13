@@ -26,6 +26,7 @@ export type LocationInfo = {
   require_downpayment: boolean;
   downpayment_min_hours: number;
   no_split_rate_booking: boolean;
+  allow_half_hour_bookings: boolean;
 };
 
 export type Announcement = {

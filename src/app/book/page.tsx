@@ -7,7 +7,8 @@ import { MapPin, Megaphone, CalendarDays } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
 import type { Court, Booking, Location } from "@/lib/types";
-import { TIME_SLOTS } from "@/lib/types";
+import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
+import type { TimeSlot } from "@/lib/types";
 import { applyTheme, clearTheme, themeVarsStyle } from "@/lib/themes";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -79,12 +80,20 @@ function normEnd(t: string): string {
   return t === "00:00" ? "24:00" : t;
 }
 
+// Format "HH:MM" → "H:MM AM/PM"
+function fmtSlotTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h < 12 ? "AM" : "PM";
+  const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 function isValidPHPhone(raw: string): boolean {
   return /^(\+?63|0)9\d{9}$/.test(raw.replace(/[\s\-().]/g, ""));
 }
 
-function isSlotBooked(bookings: Booking[], courtId: string, slotIdx: number): boolean {
-  const slot = TIME_SLOTS[slotIdx];
+function isSlotBooked(slots: TimeSlot[], bookings: Booking[], courtId: string, slotIdx: number): boolean {
+  const slot = slots[slotIdx];
   const slotEnd = normEnd(slot.end);
   return bookings.some((b) => {
     if (b.court_id !== courtId) return false;
@@ -96,20 +105,21 @@ function isSlotBooked(bookings: Booking[], courtId: string, slotIdx: number): bo
 }
 
 // Returns true if a related court (parent or child) is booked, blocking this slot.
-function isSlotBlockedByRelated(courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
-  if (court.parent_court_id && isSlotBooked(bookings, court.parent_court_id, slotIdx)) return true;
-  return courts.some((c) => c.parent_court_id === court.id && isSlotBooked(bookings, c.id, slotIdx));
+function isSlotBlockedByRelated(slots: TimeSlot[], courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
+  if (court.parent_court_id && isSlotBooked(slots, bookings, court.parent_court_id, slotIdx)) return true;
+  return courts.some((c) => c.parent_court_id === court.id && isSlotBooked(slots, bookings, c.id, slotIdx));
 }
 
-function isSlotUnavailable(courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
-  return isSlotBooked(bookings, court.id, slotIdx) || isSlotBlockedByRelated(courts, bookings, court, slotIdx);
+function isSlotUnavailable(slots: TimeSlot[], courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
+  return isSlotBooked(slots, bookings, court.id, slotIdx) || isSlotBlockedByRelated(slots, courts, bookings, court, slotIdx);
 }
 
-function isPast(dateIso: string, slotIdx: number): boolean {
-  const slot = TIME_SLOTS[slotIdx];
+function isPast(slots: TimeSlot[], dateIso: string, slotIdx: number): boolean {
+  const slot = slots[slotIdx];
   const now = new Date();
   const [y, m, d] = dateIso.split("-").map(Number);
-  return new Date(y, m - 1, d, parseInt(slot.start, 10), 0) < now;
+  const [h, min] = slot.start.split(":").map(Number);
+  return new Date(y, m - 1, d, h, min) < now;
 }
 
 function isWeekend(dateIso: string): boolean {
@@ -119,6 +129,7 @@ function isWeekend(dateIso: string): boolean {
 }
 
 function calcPrice(
+  slots: TimeSlot[],
   loc: Location,
   startIdx: number,
   endIdx: number,
@@ -141,29 +152,28 @@ function calcPrice(
   );
   const dayRate   = court?.custom_day_rate   ?? loc.day_rate;
   const nightRate = court?.custom_night_rate ?? loc.night_rate;
+  const slotDuration = slots.length > 24 ? 0.5 : 1;
 
   // pax: per-person flat fee (one charge total, not per hour)
   if (unit === "pax") {
-    // Use the rate that applies to the start slot
-    const startH = parseInt(TIME_SLOTS[startIdx].start.slice(0, 2), 10);
+    const startH = parseInt(slots[startIdx].start.slice(0, 2), 10);
     const rate = startH >= nightHour ? nightRate : dayRate;
     return rate * playerCount;
   }
 
-  // hr (default): per hour
+  // hr (default): per slot, scaled by slot duration
   let total = 0;
   for (let i = startIdx; i <= endIdx; i++) {
-    const hour = parseInt(TIME_SLOTS[i].start.slice(0, 2), 10);
-    total += hour >= nightHour ? nightRate : dayRate;
+    const hour = parseInt(slots[i].start.slice(0, 2), 10);
+    total += (hour >= nightHour ? nightRate : dayRate) * slotDuration;
   }
   return total;
 }
 
-function slotRangeLabel(startIdx: number, endIdx: number): string {
-  const startH = parseInt(TIME_SLOTS[startIdx].start.slice(0, 2), 10);
-  const rawEnd = TIME_SLOTS[endIdx].end;
-  const endH = rawEnd === "00:00" ? 0 : parseInt(rawEnd.slice(0, 2), 10);
-  return `${fmtHour(startH)} – ${fmtHour(endH)}`;
+function slotRangeLabel(slots: TimeSlot[], startIdx: number, endIdx: number): string {
+  const startStr = slots[startIdx].start;
+  const rawEnd = slots[endIdx].end;
+  return `${fmtSlotTime(startStr)} – ${fmtSlotTime(rawEnd === "00:00" ? "00:00" : rawEnd)}`;
 }
 
 // ─── Court illustration SVG ───────────────────────────────────────────────────
@@ -420,13 +430,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       if (!gridRef.current || !tbodyRef.current) return;
       const now = new Date();
       const currentHour = now.getHours();
-      // Is current time within the visible operating window?
       if (currentHour < openH || currentHour >= closeH) { setNowTop(null); return; }
       const rows = tbodyRef.current.rows;
       if (!rows.length) return;
-      // Row index within the visible (filtered) rows
-      const rowIdx = currentHour - openH;
-      const fraction = now.getMinutes() / 60;
+      const totalMinsSinceOpen = (currentHour - openH) * 60 + now.getMinutes();
+      const rowIdx = halfHour ? Math.floor(totalMinsSinceOpen / 30) : currentHour - openH;
+      const fraction = halfHour ? (totalMinsSinceOpen % 30) / 30 : now.getMinutes() / 60;
       const row = rows[Math.min(rowIdx, rows.length - 1)];
       const containerRect = gridRef.current.getBoundingClientRect();
       const rowRect = row.getBoundingClientRect();
@@ -459,27 +468,27 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   // Find the first non-past, non-booked slot within operating hours
   function defaultStartIdx(courtId: string): number {
     const court = courts.find((c) => c.id === courtId);
-    for (let i = openH; i < closeH; i++) {
-      if (!isPast(date, i) && (!court || !isSlotUnavailable(courts, bookings, court, i))) return i;
+    for (let i = openH * slotsPerHour; i < closeH * slotsPerHour; i++) {
+      if (!isPast(slots, date, i) && (!court || !isSlotUnavailable(slots, courts, bookings, court, i))) return i;
     }
-    return openH;
+    return openH * slotsPerHour;
   }
 
   // Last valid end slot within operating hours, not crossing a booked or blocked slot
   function maxEndIdx(courtId: string, startIdx: number): number {
     const court = courts.find((c) => c.id === courtId);
     // If split-rate bookings are blocked and start is in the day period, cap at the night boundary
-    if (selectedLocation?.no_split_rate_booking && startIdx < nightHour) {
-      const cap = nightHour - 1;
+    if (selectedLocation?.no_split_rate_booking && startIdx < nightHour * slotsPerHour) {
+      const cap = nightHour * slotsPerHour - 1;
       for (let i = startIdx; i <= cap; i++) {
-        if (court && isSlotUnavailable(courts, bookings, court, i)) return i - 1;
+        if (court && isSlotUnavailable(slots, courts, bookings, court, i)) return i - 1;
       }
       return cap;
     }
-    for (let i = startIdx; i < closeH; i++) {
-      if (court && isSlotUnavailable(courts, bookings, court, i)) return i - 1;
+    for (let i = startIdx; i < closeH * slotsPerHour; i++) {
+      if (court && isSlotUnavailable(slots, courts, bookings, court, i)) return i - 1;
     }
-    return closeH - 1;
+    return closeH * slotsPerHour - 1;
   }
 
   function openBookingModal(preCourtId?: string, preStartIdx?: number) {
@@ -521,8 +530,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   function rangeConflict(): string | null {
     const court = courts.find((c) => c.id === form.court_id);
     for (let i = form.startIdx; i <= form.endIdx; i++) {
-      if (isPast(date, i)) return `${TIME_SLOTS[i].start} is in the past.`;
-      if (court && isSlotUnavailable(courts, bookings, court, i)) return `${TIME_SLOTS[i].start} is not available.`;
+      if (isPast(slots, date, i)) return `${slots[i].start} is in the past.`;
+      if (court && isSlotUnavailable(slots, courts, bookings, court, i)) return `${slots[i].start} is not available.`;
     }
     return null;
   }
@@ -545,8 +554,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       body: JSON.stringify({
         court_id: form.court_id,
         date,
-        start_time: TIME_SLOTS[form.startIdx].start + ":00",
-        end_time: TIME_SLOTS[form.endIdx].end + ":00",
+        start_time: slots[form.startIdx].start + ":00",
+        end_time: slots[form.endIdx].end + ":00",
         booker_name: form.booker_name,
         booker_phone: form.booker_phone,
         booker_email: form.booker_email || null,
@@ -574,12 +583,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
 
     const courtName = courts.find((c) => c.id === form.court_id)?.name ?? "";
     const bookedCourt = courts.find((c) => c.id === form.court_id);
-    const totalPrice = calcPrice(selectedLocation, form.startIdx, form.endIdx, date, bookedCourt, form.player_count);
+    const totalPrice = calcPrice(slots, selectedLocation, form.startIdx, form.endIdx, date, bookedCourt, form.player_count);
     setConfirmed({
       courtName,
       locationName: selectedLocation.name,
       date,
-      rangeLabel: slotRangeLabel(form.startIdx, form.endIdx),
+      rangeLabel: slotRangeLabel(slots, form.startIdx, form.endIdx),
       totalPrice,
       booker_name: form.booker_name,
       requiresPayment: json.requires_payment ?? false,
@@ -603,10 +612,17 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       )
     : 18;
 
-  // Visible slot indices (filtered to operating hours)
-  const visibleSlotIndices = Array.from({ length: closeH - openH }, (_, k) => openH + k);
+  const halfHour = selectedLocation?.allow_half_hour_bookings ?? false;
+  const slots = halfHour ? HALF_HOUR_SLOTS : TIME_SLOTS;
+  const slotsPerHour = halfHour ? 2 : 1;
 
-  // Precompute booking spans so consecutive hours from the same booking merge into one cell
+  // Visible slot indices (filtered to operating hours)
+  const visibleSlotIndices = Array.from(
+    { length: (closeH - openH) * slotsPerHour },
+    (_, k) => openH * slotsPerHour + k
+  );
+
+  // Precompute booking spans so consecutive slots from the same booking merge into one cell
   type SlotSpan = { booking: Booking; rowSpan: number; isStart: boolean };
   const bookingSpanMap = new Map<string, Map<number, SlotSpan>>();
   courts.forEach((court) => {
@@ -617,7 +633,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       const bStart = b.start_time.slice(0, 5);
       const bEnd = normEnd(b.end_time.slice(0, 5));
       const covered = visibleSlotIndices.filter((idx) => {
-        const s = TIME_SLOTS[idx];
+        const s = slots[idx];
         return s.start < bEnd && normEnd(s.end) > bStart;
       });
       if (!covered.length) return;
@@ -632,18 +648,25 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const modalCourt = courts.find((c) => c.id === form.court_id);
   const validMax = maxEndIdx(form.court_id, form.startIdx);
   const totalPrice = selectedLocation
-    ? calcPrice(selectedLocation, form.startIdx, form.endIdx, date, modalCourt, form.player_count)
+    ? calcPrice(slots, selectedLocation, form.startIdx, form.endIdx, date, modalCourt, form.player_count)
     : 0;
   const isPaxCourt = (modalCourt?.custom_rate_unit ?? "hr") === "pax" && modalCourt?.custom_day_rate != null;
-  const durationHours = form.endIdx - form.startIdx + 1;
+  const durationSlots = form.endIdx - form.startIdx + 1;
+  const durationMins = durationSlots * (halfHour ? 30 : 60);
+  const durationLabel = durationMins < 60
+    ? `${durationMins} min`
+    : durationMins % 60 === 0
+    ? `${durationMins / 60} ${durationMins === 60 ? "hour" : "hours"}`
+    : `${Math.floor(durationMins / 60)}h ${durationMins % 60}m`;
+  const durationHours = durationMins / 60;
   const showDownpaymentNotice = selectedLocation?.require_downpayment &&
     durationHours > (selectedLocation?.downpayment_min_hours ?? 3);
 
   // Available start indices for the selected court within operating hours
   const availableStarts = visibleSlotIndices.filter((i) => {
-    if (isPast(date, i)) return false;
+    if (isPast(slots, date, i)) return false;
     const court = courts.find((c) => c.id === form.court_id);
-    return !court || !isSlotUnavailable(courts, bookings, court, i);
+    return !court || !isSlotUnavailable(slots, courts, bookings, court, i);
   });
 
   return (
@@ -1058,7 +1081,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   </thead>
                   <tbody ref={tbodyRef}>
                     {visibleSlotIndices.map((absIdx, rowIdx) => {
-                      const slot = TIME_SLOTS[absIdx];
+                      const slot = slots[absIdx];
                       const slotH = parseInt(slot.start.slice(0, 2), 10);
                       const isNight = hasPricing && slotH >= nightHour;
                       return (
@@ -1067,7 +1090,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                           className={`${rowIdx === 0 ? "" : "border-t border-border"} ${isNight ? "bg-surface/30" : "bg-background"}`}
                         >
                           <td className={`px-3 sm:px-4 py-3 sticky left-0 z-10 border-r border-border whitespace-nowrap ${isNight ? "bg-surface/50" : "bg-background"}`}>
-                            <div className="text-sm font-semibold text-foreground tabular-nums">{fmtHour(slotH)}</div>
+                            <div className="text-sm font-semibold text-foreground tabular-nums">{fmtSlotTime(slot.start)}</div>
                             {hasPricing && (
                               <div className="text-[10px] text-muted mt-0.5 flex items-center gap-1">
                                 ₱{(isNight ? selectedLocation!.night_rate : selectedLocation!.day_rate).toFixed(0)}/hr
@@ -1087,8 +1110,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                             const matchingBooking = slotInfo?.booking ?? null;
                             const isPending = matchingBooking?.status === "pending_payment";
                             const booked = !!matchingBooking;
-                            const blockedByRelated = !booked && isSlotBlockedByRelated(courts, bookings, court, absIdx);
-                            const past = isPast(date, absIdx);
+                            const blockedByRelated = !booked && isSlotBlockedByRelated(slots, courts, bookings, court, absIdx);
+                            const past = isPast(slots, date, absIdx);
                             const available = !booked && !blockedByRelated && !past && court.is_active;
                             const rowSpan = slotInfo?.rowSpan ?? 1;
                             return (
@@ -1267,13 +1290,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                     className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
                   >
                     {visibleSlotIndices.map((i) => {
-                      const past = isPast(date, i);
+                      const past = isPast(slots, date, i);
                       const court = courts.find((c) => c.id === form.court_id);
-                      const unavailable = !!court && isSlotUnavailable(courts, bookings, court, i);
-                      const h = parseInt(TIME_SLOTS[i].start.slice(0, 2), 10);
+                      const unavailable = !!court && isSlotUnavailable(slots, courts, bookings, court, i);
                       return (
                         <option key={i} value={i} disabled={past || unavailable}>
-                          {fmtHour(h)}{past ? " (past)" : unavailable ? " (unavailable)" : ""}
+                          {fmtSlotTime(slots[i].start)}{past ? " (past)" : unavailable ? " (unavailable)" : ""}
                         </option>
                       );
                     })}
@@ -1290,10 +1312,9 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                     className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
                   >
                     {Array.from({ length: validMax - form.startIdx + 1 }, (_, k) => form.startIdx + k).map((i) => {
-                      const rawEnd = TIME_SLOTS[i].end;
-                      const endH = rawEnd === "00:00" ? 0 : parseInt(rawEnd.slice(0, 2), 10);
+                      const rawEnd = slots[i].end;
                       return (
-                        <option key={i} value={i}>{fmtHour(endH)}</option>
+                        <option key={i} value={i}>{fmtSlotTime(rawEnd === "00:00" ? "00:00" : rawEnd)}</option>
                       );
                     })}
                   </select>
@@ -1331,8 +1352,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 <div>
                   <p className="text-xs text-muted font-semibold uppercase tracking-wide">Duration</p>
                   <p className="text-sm font-semibold text-foreground mt-0.5">
-                    {form.endIdx - form.startIdx + 1} {form.endIdx - form.startIdx + 1 === 1 ? "hour" : "hours"}
-                    <span className="text-muted font-normal"> · {slotRangeLabel(form.startIdx, form.endIdx)}</span>
+                    {durationLabel}
+                    <span className="text-muted font-normal"> · {slotRangeLabel(slots, form.startIdx, form.endIdx)}</span>
                   </p>
                 </div>
                 {totalPrice > 0 && (
