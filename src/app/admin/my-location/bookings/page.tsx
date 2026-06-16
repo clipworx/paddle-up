@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, RefreshCw, X } from "lucide-react";
 import { useLocationAdminContext } from "@/contexts/LocationAdminContext";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import type { Court, Booking, BookingStatus } from "@/lib/types";
@@ -69,6 +69,10 @@ export default function BookingsPage() {
   const [rescheduleEndHour, setRescheduleEndHour]     = useState(1);
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
   const [rescheduleError, setRescheduleError]           = useState<string | null>(null);
+
+  const [listSearch, setListSearch]             = useState("");
+  const [listStatusFilter, setListStatusFilter] = useState<BookingStatus | "all">("all");
+  const [listPage, setListPage]                 = useState(0);
 
   const tbodyRef       = useRef<HTMLTableSectionElement>(null);
   const refundReasonRef = useRef<HTMLTextAreaElement>(null);
@@ -437,29 +441,92 @@ export default function BookingsPage() {
         ) : viewMode === "list" ? (
           /* ── List view ── */
           (() => {
-            const activeBookings = (bookings ?? [])
+            const q = listSearch.trim().toLowerCase();
+            const filtered = (bookings ?? [])
               .filter((b) => b.status === "confirmed" || b.status === "pending_payment" || b.status === "cancelled" || b.status === "refunded")
-              .sort((a, b) => a.start_time.localeCompare(b.start_time) || courtName(a.court_id).localeCompare(courtName(b.court_id)));
-            return activeBookings.length === 0 ? (
-              <div className="rounded-xl border border-border bg-background p-10 text-center shadow-sm">
-                <p className="text-sm text-muted">No bookings on {displayDate(date)}.</p>
-                <button onClick={() => openNewBooking()} className="mt-4 rounded-full bg-accent text-white px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">
-                  + New booking
-                </button>
+              .filter((b) => listStatusFilter === "all" || b.status === listStatusFilter)
+              .filter((b) => !q || b.booker_name.toLowerCase().includes(q) || courtName(b.court_id).toLowerCase().includes(q))
+              .sort((a, b) => {
+                const pendingA = a.status === "pending_payment" ? 0 : 1;
+                const pendingB = b.status === "pending_payment" ? 0 : 1;
+                if (pendingA !== pendingB) return pendingA - pendingB;
+                return a.start_time.localeCompare(b.start_time) || courtName(a.court_id).localeCompare(courtName(b.court_id));
+              });
+            const LIST_PAGE_SIZE = 10;
+            const listTotalPages = Math.ceil(filtered.length / LIST_PAGE_SIZE);
+            const safePage = Math.min(listPage, Math.max(0, listTotalPages - 1));
+            const activeBookings = filtered.slice(safePage * LIST_PAGE_SIZE, (safePage + 1) * LIST_PAGE_SIZE);
+
+            const listPaginator = filtered.length > LIST_PAGE_SIZE ? (
+              <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                <button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}
+                  className="rounded-lg border border-border w-8 h-8 flex items-center justify-center font-bold text-muted hover:text-foreground hover:border-accent disabled:opacity-30 transition-colors">‹</button>
+                {Array.from({ length: listTotalPages }, (_, i) => (
+                  <button key={i} onClick={() => setListPage(i)}
+                    className={`rounded-lg border px-2.5 h-8 text-sm font-semibold transition-colors ${safePage === i ? "border-accent bg-accent text-white" : "border-border text-muted hover:text-foreground hover:border-accent"}`}>
+                    {i + 1}
+                  </button>
+                ))}
+                <button onClick={() => setListPage((p) => Math.min(listTotalPages - 1, p + 1))} disabled={safePage === listTotalPages - 1}
+                  className="rounded-lg border border-border w-8 h-8 flex items-center justify-center font-bold text-muted hover:text-foreground hover:border-accent disabled:opacity-30 transition-colors">›</button>
               </div>
-            ) : (
-              <div className="rounded-2xl border border-border shadow-sm overflow-hidden">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-surface text-left">
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Time</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Space</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Booker</th>
-                      <th className="hidden sm:table-cell px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Phone</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+            ) : null;
+
+            return (
+              <div className="space-y-3">
+                {/* Search + filter bar */}
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    type="text"
+                    value={listSearch}
+                    onChange={(e) => { setListSearch(e.target.value); setListPage(0); }}
+                    placeholder="Search booker or space…"
+                    className="flex-1 min-w-48 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent"
+                  />
+                  <button
+                    onClick={() => loadBookings(date)}
+                    title="Refresh"
+                    className="rounded-lg border border-border w-9 h-9 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors shrink-0"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                  <select
+                    value={listStatusFilter}
+                    onChange={(e) => { setListStatusFilter(e.target.value as BookingStatus | "all"); setListPage(0); }}
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="pending_payment">Pending</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="refunded">Refunded</option>
+                  </select>
+                </div>
+
+                {filtered.length === 0 ? (
+                  <div className="rounded-xl border border-border bg-background p-10 text-center shadow-sm">
+                    <p className="text-sm text-muted">{q || listStatusFilter !== "all" ? "No bookings match your search." : `No bookings on ${displayDate(date)}.`}</p>
+                    {!q && listStatusFilter === "all" && (
+                      <button onClick={() => openNewBooking()} className="mt-4 rounded-full bg-accent text-white px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">
+                        + New booking
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {listPaginator}
+                    <div className="rounded-2xl border border-border shadow-sm overflow-hidden">
+                      <table className="w-full text-sm border-collapse">
+                        <thead>
+                          <tr className="border-b border-border bg-surface text-left">
+                            <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Time</th>
+                            <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Space</th>
+                            <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Booker</th>
+                            <th className="hidden sm:table-cell px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Phone</th>
+                            <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
                     {activeBookings.map((b, i) => (
                       <tr
                         key={b.id}
@@ -478,8 +545,12 @@ export default function BookingsPage() {
                         <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
+                        </tbody>
+                      </table>
+                    </div>
+                    {listPaginator}
+                  </>
+                )}
               </div>
             );
           })()
