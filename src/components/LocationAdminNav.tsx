@@ -35,10 +35,11 @@ function useActiveTab() {
 type Props = {
   me: Me | null;
   locationName: string | null;
+  logoUrl: string | null;
   onLogout: () => void;
 };
 
-export function LocationAdminNav({ me, locationName, onLogout }: Props) {
+export function LocationAdminNav({ me, locationName, logoUrl, onLogout }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const activeTab = useActiveTab();
   const avatarInitial = (me?.username?.[0] ?? "A").toUpperCase();
@@ -100,8 +101,8 @@ export function LocationAdminNav({ me, locationName, onLogout }: Props) {
               Log out
             </button>
             {/* Avatar */}
-            <div className="w-9.5 h-9.5 rounded-full bg-accent flex items-center justify-center text-white font-bold text-[14px] shrink-0 select-none">
-              {avatarInitial}
+            <div className="w-9.5 h-9.5 rounded-full bg-accent flex items-center justify-center text-white font-bold text-[14px] shrink-0 select-none overflow-hidden">
+              {logoUrl ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" /> : avatarInitial}
             </div>
             {/* Mobile burger */}
             <button
@@ -152,8 +153,8 @@ export function LocationAdminNav({ me, locationName, onLogout }: Props) {
         </div>
         <div className="pt-3.5 border-t border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9.5 h-9.5 rounded-full bg-accent flex items-center justify-center text-white font-bold text-[14px] shrink-0">
-              {avatarInitial}
+            <div className="w-9.5 h-9.5 rounded-full bg-accent flex items-center justify-center text-white font-bold text-[14px] shrink-0 overflow-hidden">
+              {logoUrl ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" /> : avatarInitial}
             </div>
             <span className="text-[13.5px] font-semibold text-foreground">{me?.username}</span>
           </div>

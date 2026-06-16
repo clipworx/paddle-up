@@ -132,12 +132,14 @@ export async function GET() {
 
   const courtMap = Object.fromEntries((courts ?? []).map((c) => [c.id, c.name]));
 
-  const court_utilization = (courts ?? []).map((court) => {
-    const cb = todayBk.filter((b) => b.court_id === court.id && active(b));
-    const bookedHours = cb.reduce((s, b) => s + bookingHours(b), 0);
-    const pct = totalHours > 0 ? Math.min(100, Math.round((bookedHours / totalHours) * 100)) : 0;
-    return { id: court.id, name: court.name, is_active: court.is_active, booked_hours: bookedHours, total_hours: totalHours, pct };
-  });
+  const court_utilization = (courts ?? [])
+    .map((court) => {
+      const cb = todayBk.filter((b) => b.court_id === court.id && active(b));
+      const bookedHours = cb.reduce((s, b) => s + bookingHours(b), 0);
+      const pct = totalHours > 0 ? Math.min(100, Math.round((bookedHours / totalHours) * 100)) : 0;
+      return { id: court.id, name: court.name, is_active: court.is_active, booked_hours: bookedHours, total_hours: totalHours, pct };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
 
   const recent_activity = bookings
     .filter((b) => b.status !== "cancelled")

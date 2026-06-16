@@ -340,6 +340,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [date, setDate] = useState(today);
   const [courts, setCourts] = useState<Court[]>([]);
+  const [courtPage, setCourtPage] = useState(0);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loadingCourts, setLoadingCourts] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -389,7 +390,13 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     setLoadingCourts(true);
     fetch(`/api/courts?location_id=${selectedLocation.id}`)
       .then((r) => r.json())
-      .then((j) => setCourts(j.courts ?? []))
+      .then((j) => {
+        const c: Court[] = (j.courts ?? []).sort((a: Court, b: Court) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+        );
+        setCourts(c);
+        setCourtPage(0);
+      })
       .finally(() => setLoadingCourts(false));
 
     // Load announcements whenever location changes
@@ -490,6 +497,69 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     }
     return closeH * slotsPerHour - 1;
   }
+
+  const PAGE_SIZE = 5;
+  const totalPages = Math.ceil(courts.length / PAGE_SIZE);
+  const visibleCourts = courts.length > 5
+    ? courts.slice(courtPage * PAGE_SIZE, (courtPage + 1) * PAGE_SIZE)
+    : courts;
+
+  const pageButtons: (number | "...")[] = (() => {
+    if (totalPages <= 4) return Array.from({ length: totalPages }, (_, i) => i);
+    const visible = new Set<number>([0, totalPages - 1, courtPage]);
+    if (courtPage > 0) visible.add(courtPage - 1);
+    if (courtPage < totalPages - 1) visible.add(courtPage + 1);
+    const sorted = [...visible].sort((a, b) => a - b).slice(0, 4);
+    const result: (number | "...")[] = [];
+    sorted.forEach((p, idx) => {
+      if (idx > 0 && p - sorted[idx - 1] > 1) result.push("...");
+      result.push(p);
+    });
+    if (sorted[sorted.length - 1] < totalPages - 1) result.push("...", totalPages - 1);
+    return result;
+  })();
+
+  const courtPaginator = courts.length > 5 ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={() => setCourtPage((p) => Math.max(0, p - 1))}
+        disabled={courtPage === 0}
+        className="rounded-lg border border-border w-8 h-8 flex items-center justify-center font-bold text-muted hover:text-foreground hover:border-accent disabled:opacity-30 transition-colors"
+      >‹</button>
+      {pageButtons.map((item, idx) =>
+        item === "..." ? (
+          <span key={`ellipsis-${idx}`} className="text-muted px-1 text-sm font-semibold">…</span>
+        ) : (
+          <button
+            key={item}
+            onClick={() => setCourtPage(item)}
+            className={`rounded-lg border px-2.5 h-8 text-sm font-semibold transition-colors whitespace-nowrap ${
+              courtPage === item
+                ? "border-accent bg-accent text-white"
+                : "border-border text-muted hover:text-foreground hover:border-accent"
+            }`}
+          >
+            {(() => { const s = courts.slice(item * PAGE_SIZE, (item + 1) * PAGE_SIZE); return `${s[0]?.name} – ${s[s.length - 1]?.name}`; })()}
+          </button>
+        )
+      )}
+      <button
+        onClick={() => setCourtPage((p) => Math.min(totalPages - 1, p + 1))}
+        disabled={courtPage === totalPages - 1}
+        className="rounded-lg border border-border w-8 h-8 flex items-center justify-center font-bold text-muted hover:text-foreground hover:border-accent disabled:opacity-30 transition-colors"
+      >›</button>
+      <select
+        value={courtPage}
+        onChange={(e) => setCourtPage(Number(e.target.value))}
+        className="rounded-lg border border-border bg-background px-3 h-8 text-sm text-foreground focus:outline-none focus:border-accent"
+      >
+        {Array.from({ length: totalPages }, (_, i) => {
+          const slice = courts.slice(i * PAGE_SIZE, (i + 1) * PAGE_SIZE);
+          return <option key={i} value={i}>{slice[0]?.name} – {slice[slice.length - 1]?.name}</option>;
+        })}
+      </select>
+    </div>
+  ) : null;
 
   function openBookingModal(preCourtId?: string, preStartIdx?: number) {
     const court = preCourtId
@@ -1034,6 +1104,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               </div>
             </div>
 
+          {courtPaginator && <div className="flex justify-center">{courtPaginator}</div>}
+
           {loadingCourts || loadingSlots ? (
             <p className="text-sm text-muted py-8 text-center">Loading…</p>
           ) : courts.length === 0 ? (
@@ -1060,10 +1132,10 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                       <th className="px-3 sm:px-4 py-3.5 text-left text-[10px] uppercase tracking-widest text-muted font-bold w-24 sm:w-36 sticky left-0 bg-surface z-10 border-r border-border">
                         Time
                       </th>
-                      {courts.map((court) => (
+                      {visibleCourts.map((court) => (
                         <th
                           key={court.id}
-                          className={`px-3 sm:px-4 py-3.5 text-center min-w-28 sm:min-w-36 ${courts.length > 1 ? "border-l border-border" : ""}`}
+                          className={`px-3 sm:px-4 py-3.5 text-center min-w-28 sm:min-w-36 ${visibleCourts.length > 1 ? "border-l border-border" : ""}`}
                         >
                           <span className="text-sm font-bold text-foreground">{court.name}</span>
                           {!court.is_active && (
@@ -1118,7 +1190,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                               </div>
                             )}
                           </td>
-                          {courts.map((court) => {
+                          {visibleCourts.map((court) => {
                             const slotInfo = bookingSpanMap.get(court.id)?.get(absIdx);
                             // Skip — covered by a rowSpan from the booking's first slot
                             if (slotInfo && !slotInfo.isStart) return null;
@@ -1135,7 +1207,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                                 key={court.id}
                                 rowSpan={rowSpan}
                                 onClick={() => available && openBookingModal(court.id, absIdx)}
-                                className={`px-2 align-middle transition-colors ${rowSpan > 1 ? "py-2" : "py-2"} ${courts.length > 1 ? "border-l border-border" : ""} ${
+                                className={`px-2 align-middle transition-colors ${rowSpan > 1 ? "py-2" : "py-2"} ${visibleCourts.length > 1 ? "border-l border-border" : ""} ${
                                   available
                                     ? "cursor-pointer hover:bg-accent/8 group/cell"
                                     : isPending
@@ -1171,6 +1243,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   </tbody>
                 </table>
               </div>
+
+              {courtPaginator && <div className="flex justify-center">{courtPaginator}</div>}
 
               {/* Legend */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">

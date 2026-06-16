@@ -11,7 +11,7 @@ export default function LocationAdminLayout({ children }: { children: React.Reac
   return (
     <LocationAdminContext.Provider value={{ me, location, onLogout, loadLocation }}>
       <div className="min-h-screen bg-surface">
-        <LocationAdminNav me={me} locationName={location?.name ?? null} onLogout={onLogout} />
+        <LocationAdminNav me={me} locationName={location?.name ?? null} logoUrl={location?.logo_url ?? null} onLogout={onLogout} />
         {loading
           ? <main className="p-10 text-sm text-muted">Loading…</main>
           : children
