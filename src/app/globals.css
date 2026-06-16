@@ -1,37 +1,122 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fdf4e8;
-  --foreground: #4b2e2b;
-  --muted: #8c5a3c;
-  --accent: #c08552;
-  --surface: #f0ede7;
-  --border: #e4d8c8;
+  /* ── Green ramp ── */
+  --green-50:  #eefbee;
+  --green-100: #dff7df;
+  --green-200: #bfeebf;
+  --green-300: #93e093;
+  --green-400: #5fd35f;
+  --green-500: #34c534;
+  --green-600: #24ae24;
+  --green-700: #1c8c1c;
+  --green-800: #176e18;
+  --green-900: #135313;
+
+  /* ── Primary semantic aliases ── */
+  --primary:       #24ae24;
+  --primary-hover: #1c8c1c;
+  --primary-press: #176e18;
+  --primary-soft:  #dff7df;
+  --primary-tint:  #eefbee;
+  --on-primary:    #ffffff;
+
+  /* ── Neutrals ── */
+  --ink-900: #14171a;
+  --ink-800: #1f242a;
+  --ink-700: #2c3138;
+  --ink-600: #444b54;
+  --ink-500: #5b636d;
+  --ink-400: #8b929b;
+  --ink-300: #c3c9cf;
+  --ink-200: #dfe3e7;
+  --ink-100: #eef1f3;
+  --ink-50:  #f6f8f7;
+
+  /* ── Surfaces ── */
+  --surface-bg:  #ffffff;
+  --surface-sub: #f3f6f3;
+  --surface-2:   #f8faf8;
+
+  /* ── Status ── */
+  --success:  #24ae24;
+  --positive: #1c8c1c;
+  --negative: #d5443a;
+  --warning:  #d98a1f;
+  --info:     #2b7bd6;
+
+  /* ── Gradients ── */
+  --grad-primary: linear-gradient(135deg, #34c534 0%, #1c8c1c 100%);
+  --grad-chip:    linear-gradient(135deg, #2ec02e 0%, #24ae24 100%);
+  --hero-wash:    linear-gradient(180deg, #ffffff 0%, #f1faf1 55%, #e6f6e6 100%);
+
+  /* ── Glow ── */
+  --glow-core: #8fe08f;
+  --glow-mid:  #c2efc2;
+
+  /* ── App semantic tokens (Tailwind binding) ── */
+  --background: #ffffff;       /* cards, modals, top bar     */
+  --foreground: var(--ink-900);
+  --muted:      var(--ink-500);
+  --accent:     var(--primary);
+  --surface:    var(--ink-50); /* page/shell background       */
+  --border:     var(--ink-200);
 }
 
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-accent: var(--accent);
-  --color-surface: var(--surface);
-  --color-border: var(--border);
+  --color-muted:      var(--muted);
+  --color-accent:     var(--accent);
+  --color-surface:    var(--surface);
+  --color-border:     var(--border);
+
+  /* Green ramp → Tailwind utilities */
+  --color-green-50:  var(--green-50);
+  --color-green-100: var(--green-100);
+  --color-green-200: var(--green-200);
+  --color-green-300: var(--green-300);
+  --color-green-400: var(--green-400);
+  --color-green-500: var(--green-500);
+  --color-green-600: var(--green-600);
+  --color-green-700: var(--green-700);
+  --color-green-800: var(--green-800);
+  --color-green-900: var(--green-900);
+
+  /* Status → Tailwind utilities */
+  --color-negative: var(--negative);
+  --color-warning:  var(--warning);
+  --color-info:     var(--info);
+  --color-positive: var(--positive);
+
+  /* Ink ramp → Tailwind utilities */
+  --color-ink-50:  var(--ink-50);
+  --color-ink-100: var(--ink-100);
+  --color-ink-200: var(--ink-200);
+  --color-ink-300: var(--ink-300);
+  --color-ink-400: var(--ink-400);
+  --color-ink-500: var(--ink-500);
+  --color-ink-600: var(--ink-600);
+  --color-ink-700: var(--ink-700);
+  --color-ink-800: var(--ink-800);
+  --color-ink-900: var(--ink-900);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
+  background: var(--surface);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
 
 ::selection {
-  background: var(--accent);
-  color: var(--background);
+  background: var(--primary);
+  color: var(--on-primary);
 }
 
-/* Scope Leaflet's z-indexes inside the map container so they don't overlap the navbar or modals */
+/* Scope Leaflet z-indexes so they don't overlap the navbar or modals */
 .leaflet-top,
 .leaflet-bottom,
 .leaflet-control-container {

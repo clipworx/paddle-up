@@ -220,11 +220,11 @@ function LocationPicker({
             Court booking
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-foreground tracking-tight leading-[1.08] mb-4">
-            Find your court.<br />
+            Find your venue.<br />
             <span className="text-accent">Book in seconds.</span>
           </h1>
           <p className="text-base sm:text-lg text-muted max-w-xl mx-auto leading-relaxed">
-            Browse available courts, pick a time slot, and confirm your booking — all from your phone.
+            Browse available venues, pick a time slot, and confirm your booking — all from your phone.
           </p>
         </div>
       </div>
@@ -247,18 +247,15 @@ function LocationPicker({
               key={loc.id}
               onClick={() => onSelect(loc)}
               style={themeVarsStyle(loc.accent_color)}
-              className="group text-left rounded-2xl border border-border bg-background overflow-hidden shadow-sm hover:shadow-lg hover:border-accent/50 transition-all duration-200"
+              className="group text-left rounded-2xl border border-accent/25 bg-background overflow-hidden shadow-sm hover:shadow-xl hover:shadow-accent/10 hover:border-accent/60 transition-all duration-200"
             >
-              {/* Facility photo or court illustration */}
-              <div
-                className="relative h-44 overflow-hidden"
-                style={{ backgroundColor: loc.accent_color ?? "var(--color-accent)" }}
-              >
+              {/* Facility photo — fixed height, always cropped to fit */}
+              <div className="relative h-44 overflow-hidden bg-accent">
                 {loc.photo_url ? (
                   <img
                     src={loc.photo_url}
                     alt={loc.name}
-                    className="w-full h-full object-cover"
+                    className="absolute inset-0 w-full h-full object-cover object-center"
                   />
                 ) : (
                   <CourtIllustration />
@@ -271,6 +268,9 @@ function LocationPicker({
                   />
                 )}
               </div>
+
+              {/* Accent strip */}
+              <div className="h-0.5 bg-accent" />
 
               {/* Info */}
               <div className="p-4 space-y-2">
@@ -288,15 +288,15 @@ function LocationPicker({
                 {loc.description && (
                   <p className="text-xs text-muted line-clamp-2 leading-relaxed">{loc.description}</p>
                 )}
-                <div className="flex items-center justify-between border-t border-border pt-3 mt-2">
+                <div className="flex items-center justify-between border-t border-accent/15 pt-3 mt-2">
                   <span className="text-xs text-muted flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-accent inline-block" />
-                    {loc.court_count} {loc.court_count === 1 ? "court" : "courts"}
+                    {loc.court_count} {loc.court_count === 1 ? "space" : "spaces"}
                   </span>
                   {(loc.day_rate > 0 || loc.night_rate > 0) ? (
                     <span className="text-sm font-bold text-foreground">
                       ₱{Math.min(loc.day_rate, loc.night_rate || loc.day_rate).toFixed(0)}
-                      <span className="text-xs font-normal text-muted">/hr</span>
+                      <span className="text-xs font-normal text-muted">{loc.allow_half_hour_bookings ? "/halfhr" : "/hr"}</span>
                     </span>
                   ) : (
                     <span className="text-xs font-semibold text-accent">Book now →</span>
@@ -314,9 +314,9 @@ function LocationPicker({
           <h2 className="text-[13px] font-bold text-muted uppercase tracking-widest text-center mb-8">How it works</h2>
           <div className="grid sm:grid-cols-3 gap-8">
             {[
-              { n: "01", title: "Choose a venue", body: "Browse all available locations and compare courts and rates." },
-              { n: "02", title: "Pick your slot", body: "Select a court and time on the live availability grid." },
-              { n: "03", title: "Confirm & play", body: "Fill in your details, pay if required, and you're ready." },
+              { n: "01", title: "Choose a venue", body: "Browse all available locations and compare spaces and rates." },
+              { n: "02", title: "Pick your slot", body: "Select a space and time on the live availability grid." },
+              { n: "03", title: "Confirm & go", body: "Fill in your details, pay if required, and you're ready." },
             ].map((step) => (
               <div key={step.n} className="text-center sm:text-left">
                 <div className="font-mono text-3xl font-black text-accent/20 leading-none mb-2 select-none">{step.n}</div>
@@ -545,6 +545,14 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       setFormError("Enter a valid Philippine mobile number (e.g. 09171234567 or +639171234567).");
       return;
     }
+    if (!form.booker_email.trim()) {
+      setFormError("Email address is required.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.booker_email.trim())) {
+      setFormError("Enter a valid email address.");
+      return;
+    }
     setFormError(null);
     setSubmitting(true);
 
@@ -558,7 +566,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
         end_time: slots[form.endIdx].end + ":00",
         booker_name: form.booker_name,
         booker_phone: form.booker_phone,
-        booker_email: form.booker_email || null,
+        booker_email: form.booker_email,
         player_count: form.player_count,
         notes: form.notes || null,
       }),
@@ -573,6 +581,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
         name_required: "Name is required.",
         phone_required: "Phone number is required.",
         phone_invalid: "Enter a valid Philippine mobile number (e.g. 09171234567).",
+        email_required: "Email address is required.",
         valid_email_required: "Enter a valid email address.",
         missing_fields: "Please fill in all required fields.",
         split_rate_not_allowed: "This location does not allow bookings that span the day and night rate. Please book day and night slots separately.",
@@ -681,12 +690,20 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
             </span>
           </Link>
           {!selectedLocation && (
-            <Link
-              href="/play"
-              className="hidden sm:block text-xs font-semibold text-muted hover:text-foreground transition-colors ml-2"
-            >
-              Open Play ↗
-            </Link>
+            <>
+              <Link
+                href="/play"
+                className="hidden sm:block text-xs font-semibold text-muted hover:text-foreground transition-colors ml-2"
+              >
+                Open Play ↗
+              </Link>
+              <Link
+                href="/about"
+                className="hidden sm:block text-xs font-semibold text-muted hover:text-foreground transition-colors"
+              >
+                About
+              </Link>
+            </>
           )}
 
           {/* Location crumb when selected */}
@@ -698,15 +715,6 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
           )}
 
           <div className="ml-auto flex items-center gap-3 shrink-0">
-            {selectedLocation?.latitude && selectedLocation?.longitude && (
-              <button
-                onClick={() => setShowMap(true)}
-                className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:border-accent/50 transition-colors"
-              >
-                <MapPin size={12} />
-                Map
-              </button>
-            )}
             {selectedLocation && !initialSlug && (locations?.length ?? 0) > 1 && (
               <button
                 onClick={() => { setSelectedLocation(null); setCourts([]); setBookings([]); }}
@@ -806,7 +814,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               )}
             </p>
             <p className="text-xs text-green-600 mt-1">
-              See you on the court, {confirmed.booker_name}!
+              See you there, {confirmed.booker_name}!
             </p>
           </div>
           <button
@@ -872,7 +880,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">From</p>
                       <p className="text-lg font-bold text-accent">
                         ₱{Math.min(selectedLocation.day_rate, selectedLocation.night_rate || selectedLocation.day_rate).toFixed(0)}
-                        <span className="text-xs font-normal text-muted">/hr</span>
+                        <span className="text-xs font-normal text-muted">{halfHour ? "/halfhr" : "/hr"}</span>
                       </p>
                     </div>
                   )}
@@ -885,7 +893,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
           </div>
 
           {/* Tab nav */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-1">
             <button
               onClick={() => setLocationTab("book")}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[13.5px] font-semibold transition-colors ${
@@ -894,7 +902,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   : "text-muted hover:text-foreground hover:bg-surface"
               }`}
             >
-              <CalendarDays size={14} /> Book a court
+              <CalendarDays size={14} /> Make a booking
             </button>
             <button
               onClick={() => setLocationTab("announcements")}
@@ -911,6 +919,14 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 </span>
               )}
             </button>
+            {selectedLocation?.latitude && selectedLocation?.longitude && (
+              <button
+                onClick={() => setShowMap(true)}
+                className="ml-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent text-white text-[13px] font-semibold hover:opacity-90 transition-opacity shadow-sm"
+              >
+                <MapPin size={13} /> Map
+              </button>
+            )}
           </div>
 
           {/* Announcements view */}
@@ -979,7 +995,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 disabled={loadingCourts || courts.length === 0}
                 className="rounded-lg bg-accent text-background px-5 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40 shrink-0 shadow-sm"
               >
-                + Book a Court
+                + New booking
               </button>
 
               <div className="flex-1" />
@@ -1022,7 +1038,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
             <p className="text-sm text-muted py-8 text-center">Loading…</p>
           ) : courts.length === 0 ? (
             <div className="rounded-xl border border-border bg-background p-8 text-center shadow-sm">
-              <p className="text-sm text-muted">No courts at this location.</p>
+              <p className="text-sm text-muted">No spaces available at this location.</p>
             </div>
           ) : (
             <>
@@ -1093,7 +1109,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                             <div className="text-sm font-semibold text-foreground tabular-nums">{fmtSlotTime(slot.start)}</div>
                             {hasPricing && (
                               <div className="text-[10px] text-muted mt-0.5 flex items-center gap-1">
-                                ₱{(isNight ? selectedLocation!.night_rate : selectedLocation!.day_rate).toFixed(0)}/hr
+                                ₱{(isNight ? selectedLocation!.night_rate : selectedLocation!.day_rate).toFixed(0)}{halfHour ? "/halfhr" : "/hr"}
                                 {isNight && (
                                   <span className="rounded-full bg-border/50 px-1.5 py-px text-[9px] font-semibold uppercase tracking-widest text-muted">
                                     Night
@@ -1454,10 +1470,10 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   )}
                 </label>
 
-                {/* Email (optional) */}
+                {/* Email */}
                 <label className="block space-y-1.5">
                   <span className="text-xs uppercase tracking-wide text-muted font-semibold">
-                    Email <span className="text-muted font-normal normal-case">(optional)</span>
+                    Email
                   </span>
                   <input
                     type="email"

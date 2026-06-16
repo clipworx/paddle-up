@@ -10,7 +10,7 @@ export async function GET() {
   const supabase = getAdminSupabase();
   const { data } = await supabase
     .from("admins")
-    .select("email, notify_new_booking, notify_cancellation")
+    .select("email, notify_new_booking, notify_cancellation, telegram_chat_id")
     .eq("id", claims.sub)
     .single();
 
@@ -22,6 +22,7 @@ export async function GET() {
     email: data?.email ?? null,
     notify_new_booking: data?.notify_new_booking ?? true,
     notify_cancellation: data?.notify_cancellation ?? true,
+    telegram_chat_id: data?.telegram_chat_id ?? null,
   });
 }
 
@@ -30,13 +31,14 @@ export async function PATCH(req: Request) {
   if (!claims) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const { username, email, notify_new_booking, notify_cancellation } = body;
+  const { username, email, notify_new_booking, notify_cancellation, telegram_chat_id } = body;
 
   const updates: Record<string, unknown> = {};
   if (typeof username === "string" && username.trim()) updates.username = username.trim();
   if ("email" in body) updates.email = typeof email === "string" && email.trim() ? email.trim().toLowerCase() : null;
   if (typeof notify_new_booking === "boolean") updates.notify_new_booking = notify_new_booking;
   if (typeof notify_cancellation === "boolean") updates.notify_cancellation = notify_cancellation;
+  if ("telegram_chat_id" in body) updates.telegram_chat_id = typeof telegram_chat_id === "string" && telegram_chat_id.trim() ? telegram_chat_id.trim() : null;
 
   if (Object.keys(updates).length === 0)
     return NextResponse.json({ error: "nothing_to_update" }, { status: 400 });

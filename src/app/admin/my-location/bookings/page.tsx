@@ -1,14 +1,23 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, X } from "lucide-react";
 import { useLocationAdminContext } from "@/contexts/LocationAdminContext";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import type { Court, Booking, BookingStatus } from "@/lib/types";
-import { TIME_SLOTS } from "@/lib/types";
+import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
 import { formatDate, fmtTime, displayDate } from "@/lib/admin-utils";
 
-const PAGE_SIZE = 20;
+function normEnd(t: string): string {
+  return t === "00:00" ? "24:00" : t;
+}
+
+function fmtSlotTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h < 12 ? "AM" : "PM";
+  const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+}
 
 const STATUS_STYLES: Record<BookingStatus, string> = {
   confirmed:       "bg-green-100 text-green-700",
@@ -32,23 +41,19 @@ function StatusBadge({ status }: { status: BookingStatus }) {
 
 export default function BookingsPage() {
   const { me, location } = useLocationAdminContext();
-  const today = formatDate(new Date(Date.now() - new Date().getTimezoneOffset() * 60000));
+  const today = formatDate(new Date());
 
-  const [courts, setCourts]                 = useState<Court[] | null>(null);
-  const [bookings, setBookings]             = useState<Booking[] | null>(null);
-  const [total, setTotal]                   = useState(0);
-  const [page, setPage]                     = useState(1);
-  const [statusFilter, setStatusFilter]     = useState("");
-  const [searchInput, setSearchInput]       = useState("");
-  const [search, setSearch]                 = useState("");
-  const searchTimer                         = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [date, setDate] = useState(today);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [courts, setCourts]     = useState<Court[] | null>(null);
+  const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [nowTop, setNowTop]     = useState<number | null>(null);
 
-  const [cancellingId, setCancellingId]     = useState<string | null>(null);
-  const [refundingId, setRefundingId]       = useState<string | null>(null);
-  const [confirmingId, setConfirmingId]     = useState<string | null>(null);
+  const [cancellingId, setCancellingId]   = useState<string | null>(null);
+  const [refundingId, setRefundingId]     = useState<string | null>(null);
+  const [confirmingId, setConfirmingId]   = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-  const [refundTarget, setRefundTarget]     = useState<string | null>(null);
-  const refundReasonRef                     = useRef<HTMLTextAreaElement>(null);
+  const [refundTarget, setRefundTarget]   = useState<string | null>(null);
 
   const [adminBookingForm, setAdminBookingForm] = useState<{
     court_id: string; date: string; start_hour: number; end_hour: number;
@@ -57,44 +62,37 @@ export default function BookingsPage() {
   const [adminBookingSubmitting, setAdminBookingSubmitting] = useState(false);
   const [adminBookingError, setAdminBookingError]           = useState<string | null>(null);
 
-  const [rescheduleTarget, setRescheduleTarget]         = useState<Booking | null>(null);
-  const [rescheduleDate, setRescheduleDate]             = useState("");
-  const [rescheduleStartHour, setRescheduleStartHour]   = useState(0);
-  const [rescheduleEndHour, setRescheduleEndHour]       = useState(1);
+  const [rescheduleTarget, setRescheduleTarget]       = useState<Booking | null>(null);
+  const [rescheduleDate, setRescheduleDate]           = useState("");
+  const [rescheduleStartHour, setRescheduleStartHour] = useState(0);
+  const [rescheduleEndHour, setRescheduleEndHour]     = useState(1);
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
   const [rescheduleError, setRescheduleError]           = useState<string | null>(null);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const tbodyRef       = useRef<HTMLTableSectionElement>(null);
+  const refundReasonRef = useRef<HTMLTextAreaElement>(null);
 
-  const loadCourts = useCallback(async (locationId: string) => {
-    const res  = await fetch("/api/admin/locations");
-    const json = await res.json();
-    const loc  = (json.locations ?? []).find((l: { id: string; courts: Court[] }) => l.id === locationId);
-    if (loc) setCourts(loc.courts ?? []);
-  }, []);
+  // ── Load courts ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!me?.location_id) return;
+    fetch("/api/admin/locations")
+      .then((r) => r.json())
+      .then((j) => {
+        const loc = (j.locations ?? []).find((l: { id: string; courts: Court[] }) => l.id === me.location_id);
+        if (loc) setCourts(loc.courts ?? []);
+      });
+  }, [me]);
 
-  const loadBookings = useCallback(async (p: number, status: string, q: string) => {
+  // ── Load bookings for selected date ──────────────────────────────────────
+  const loadBookings = useCallback(async (d: string) => {
     setBookings(null);
-    const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE) });
-    if (status) params.set("status", status);
-    if (q)      params.set("search", q);
-    const res  = await fetch(`/api/admin/bookings?${params}`);
+    const res = await fetch(`/api/admin/bookings?date=${d}&limit=200`);
     if (res.status === 401 || res.status === 403) return;
     const json = await res.json();
     setBookings(json.bookings ?? []);
-    setTotal(json.total ?? 0);
   }, []);
 
-  useEffect(() => {
-    if (me?.location_id) loadCourts(me.location_id);
-  }, [me, loadCourts]);
-
-  useEffect(() => {
-    loadBookings(page, statusFilter, search);
-  }, [page, statusFilter, search, loadBookings]);
-
-  // Reset to page 1 when filter or search changes
-  useEffect(() => { setPage(1); }, [statusFilter, search]);
+  useEffect(() => { loadBookings(date); }, [date, loadBookings]);
 
   // Keep detail modal in sync after reload
   useEffect(() => {
@@ -103,12 +101,110 @@ export default function BookingsPage() {
     }
   }, [bookings]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Derived grid values ──────────────────────────────────────────────────
+  const weekend = (() => { const d = new Date(date + "T12:00:00").getDay(); return d === 0 || d === 6; })();
+  const openH   = location ? (weekend ? location.weekend_open_hour  : location.open_hour)  : 7;
+  const closeH  = location ? (weekend ? location.weekend_close_hour : location.close_hour) : 22;
+  const nightHour = parseInt(
+    ((weekend ? location?.weekend_night_start_time : location?.night_start_time) ?? "18:00").slice(0, 2), 10
+  );
+  const hasPricing = (location?.day_rate ?? 0) > 0 || (location?.night_rate ?? 0) > 0;
+  const halfHour    = location?.allow_half_hour_bookings ?? false;
+  const slots       = halfHour ? HALF_HOUR_SLOTS : TIME_SLOTS;
+  const slotsPerHour = halfHour ? 2 : 1;
+
+  const visibleSlotIndices = Array.from(
+    { length: (closeH - openH) * slotsPerHour },
+    (_, k) => openH * slotsPerHour + k
+  );
+
+  type SlotSpan = { booking: Booking; rowSpan: number; isStart: boolean };
+  const bookingSpanMap = new Map<string, Map<number, SlotSpan>>();
+  (courts ?? []).forEach((court) => {
+    const slotMap = new Map<number, SlotSpan>();
+    (bookings ?? []).forEach((b) => {
+      if (b.court_id !== court.id) return;
+      if (b.status !== "confirmed" && b.status !== "pending_payment") return;
+      const bStart = b.start_time.slice(0, 5);
+      const bEnd   = normEnd(b.end_time.slice(0, 5));
+      const covered = visibleSlotIndices.filter((idx) => {
+        const s = slots[idx];
+        return s.start < bEnd && normEnd(s.end) > bStart;
+      });
+      if (!covered.length) return;
+      covered.forEach((idx, i) =>
+        slotMap.set(idx, { booking: b, rowSpan: covered.length, isStart: i === 0 })
+      );
+    });
+    bookingSpanMap.set(court.id, slotMap);
+  });
+
+  // ── Now indicator ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    function update() {
+      if (!tbodyRef.current || date !== today) { setNowTop(null); return; }
+      const now = new Date();
+      const h = now.getHours(), m = now.getMinutes();
+      if (h < openH || h >= closeH) { setNowTop(null); return; }
+      const totalMins = (h - openH) * 60 + m;
+      const rowIdx   = halfHour ? Math.floor(totalMins / 30) : h - openH;
+      const fraction = halfHour ? (totalMins % 30) / 30 : m / 60;
+      const rows = tbodyRef.current.querySelectorAll("tr");
+      if (rowIdx >= rows.length) { setNowTop(null); return; }
+      const row    = rows[rowIdx] as HTMLTableRowElement;
+      const tbodyT = tbodyRef.current.getBoundingClientRect().top;
+      const rowT   = row.getBoundingClientRect().top - tbodyT;
+      setNowTop(rowT + row.offsetHeight * fraction);
+    }
+    update();
+    const id = setInterval(update, 30000);
+    return () => clearInterval(id);
+  }, [date, today, openH, closeH, halfHour]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
   function courtName(courtId: string) {
-    return courts?.find((c) => c.id === courtId)?.name ?? "—";
+    return (courts ?? []).find((c) => c.id === courtId)?.name ?? "—";
+  }
+  function isBookingPast(b: Booking) { return b.date < today; }
+  function isSlotPast(slotIdx: number): boolean {
+    if (date < today) return true;
+    if (date > today) return false;
+    const slot = slots[slotIdx];
+    const [h, m] = slot.start.split(":").map(Number);
+    const now = new Date();
+    return now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m);
   }
 
-  function isBookingPast(b: Booking) { return b.date < today; }
+  function prevDay() {
+    const d = new Date(date + "T12:00:00");
+    d.setDate(d.getDate() - 1);
+    setDate(formatDate(d));
+  }
+  function nextDay() {
+    const d = new Date(date + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    setDate(formatDate(d));
+  }
 
+  function openNewBooking(courtId?: string, slotIdx?: number) {
+    const activeCourts = (courts ?? []).filter((c) => c.is_active);
+    let startH = location?.open_hour ?? 7;
+    let endH   = startH + 1;
+    if (slotIdx !== undefined) {
+      startH = parseInt(slots[slotIdx].start.slice(0, 2), 10);
+      endH   = Math.min(startH + 1, closeH);
+    }
+    setAdminBookingForm({
+      court_id: courtId ?? activeCourts[0]?.id ?? "",
+      date,
+      start_hour: startH,
+      end_hour: endH,
+      booker_name: "", booker_phone: "", booker_email: "", notes: "",
+    });
+    setAdminBookingError(null);
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────
   async function onCancelBooking(id: string) {
     if (!confirm("Cancel this booking?")) return;
     setCancellingId(id);
@@ -116,7 +212,7 @@ export default function BookingsPage() {
       const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Cancel failed");
       setSelectedBooking(null);
-      loadBookings(page, statusFilter, search);
+      loadBookings(date);
     } catch (err) { alert((err as Error).message); }
     finally { setCancellingId(null); }
   }
@@ -135,7 +231,7 @@ export default function BookingsPage() {
       });
       if (!res.ok) throw new Error("Refund failed");
       setSelectedBooking(null);
-      loadBookings(page, statusFilter, search);
+      loadBookings(date);
     } catch (err) { alert((err as Error).message); }
     finally { setRefundingId(null); }
   }
@@ -145,18 +241,16 @@ export default function BookingsPage() {
     try {
       const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}/confirm`, { method: "POST" });
       if (!res.ok) throw new Error("Confirm failed");
-      loadBookings(page, statusFilter, search);
+      loadBookings(date);
     } catch (err) { alert((err as Error).message); }
     finally { setConfirmingId(null); }
   }
 
   function openReschedule(b: Booking) {
-    const sh = parseInt(b.start_time.split(":")[0], 10);
-    const eh = parseInt(b.end_time.split(":")[0], 10);
     setRescheduleTarget(b);
     setRescheduleDate(b.date);
-    setRescheduleStartHour(sh);
-    setRescheduleEndHour(eh);
+    setRescheduleStartHour(parseInt(b.start_time.split(":")[0], 10));
+    setRescheduleEndHour(parseInt(b.end_time.split(":")[0], 10));
     setRescheduleError(null);
     setSelectedBooking(null);
   }
@@ -186,7 +280,7 @@ export default function BookingsPage() {
         throw new Error(msg[json.error] ?? json.error ?? "Failed to reschedule");
       }
       setRescheduleTarget(null);
-      loadBookings(page, statusFilter, search);
+      loadBookings(date);
     } catch (err) {
       setRescheduleError((err as Error).message);
     } finally {
@@ -194,223 +288,272 @@ export default function BookingsPage() {
     }
   }
 
+  const activeCourts = (courts ?? []).filter((c) => c.is_active);
+
   return (
     <>
-      <main className="mx-auto max-w-4xl w-full px-4 py-6 sm:py-8 space-y-6">
+      <main className="mx-auto max-w-6xl w-full px-4 py-6 sm:py-8 space-y-6">
         <SubscriptionBanner location={location} />
 
-        <section className="space-y-4">
-          {/* Header */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-base font-bold text-foreground flex-1">Bookings</h2>
+        {/* ── Date nav + New booking ── */}
+        <div className="rounded-2xl border border-border bg-background shadow-sm px-4 sm:px-5 py-3.5 flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => openNewBooking()}
+            disabled={!courts || activeCourts.length === 0}
+            className="rounded-lg bg-accent text-background px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 shrink-0 shadow-sm flex items-center gap-1.5"
+          >
+            <Plus size={14} /> New booking
+          </button>
 
-            {/* Search */}
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-              <input
-                type="text"
-                value={searchInput}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setSearchInput(v);
-                  if (searchTimer.current) clearTimeout(searchTimer.current);
-                  searchTimer.current = setTimeout(() => setSearch(v.trim()), 350);
-                }}
-                placeholder="Name, phone, email…"
-                className="rounded-lg border border-border bg-background pl-8 pr-3 py-1.5 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent w-48"
-              />
-              {searchInput && (
-                <button
-                  onClick={() => { setSearchInput(""); setSearch(""); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
+          <div className="flex-1" />
 
-            {/* Status filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
-            >
-              <option value="">All statuses</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="pending_payment">Pending</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="refunded">Refunded</option>
-            </select>
-
+          {/* View toggle */}
+          <div className="flex items-center rounded-lg border border-border overflow-hidden shrink-0">
             <button
-              onClick={() => {
-                const activeCourts = courts?.filter((c) => c.is_active) ?? [];
-                setAdminBookingForm({
-                  court_id: activeCourts[0]?.id ?? "",
-                  date: today,
-                  start_hour: location?.open_hour ?? 7,
-                  end_hour: (location?.open_hour ?? 7) + 1,
-                  booker_name: "", booker_phone: "", booker_email: "", notes: "",
-                });
-                setAdminBookingError(null);
-              }}
-              className="flex items-center gap-2 rounded-full bg-accent text-white px-4 py-2 text-[13px] font-semibold hover:opacity-90 transition-opacity"
+              onClick={() => setViewMode("grid")}
+              title="Grid view"
+              className={`w-8 h-8 flex items-center justify-center transition-colors ${viewMode === "grid" ? "bg-accent text-white" : "text-muted hover:text-foreground hover:bg-surface"}`}
             >
-              <Plus size={14} /> New booking
+              <LayoutGrid size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              title="List view"
+              className={`w-8 h-8 flex items-center justify-center transition-colors border-l border-border ${viewMode === "list" ? "bg-accent text-white" : "text-muted hover:text-foreground hover:bg-surface"}`}
+            >
+              <List size={14} />
             </button>
           </div>
 
-          {/* Table */}
-          {bookings === null ? (
-            <p className="text-sm text-muted">Loading…</p>
-          ) : bookings.length === 0 ? (
-            <div className="rounded-xl border border-border bg-background p-8 text-center">
-              <p className="text-sm text-muted">{search || statusFilter ? "No bookings match your search." : "No bookings yet."}</p>
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-160 text-sm">
-                  <thead className="bg-surface">
-                    <tr className="text-left">
-                      <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Date</th>
-                      <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Court</th>
-                      <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Time</th>
-                      <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Booker</th>
-                      <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Status</th>
-                      <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Actions</th>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={prevDay}
+              className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
+            />
+            <button
+              onClick={nextDay}
+              className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2">
+            <span className="text-sm text-muted">{displayDate(date)}</span>
+            {date === today && (
+              <span className="rounded-full bg-accent/15 text-accent px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+                Today
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Content ── */}
+        {bookings === null || courts === null ? (
+          <p className="text-sm text-muted py-8 text-center">Loading…</p>
+        ) : courts.length === 0 ? (
+          <div className="rounded-xl border border-border bg-background p-8 text-center shadow-sm">
+            <p className="text-sm text-muted">No spaces at this location.</p>
+          </div>
+        ) : viewMode === "list" ? (
+          /* ── List view ── */
+          (() => {
+            const activeBookings = (bookings ?? [])
+              .filter((b) => b.status === "confirmed" || b.status === "pending_payment" || b.status === "cancelled" || b.status === "refunded")
+              .sort((a, b) => a.start_time.localeCompare(b.start_time) || courtName(a.court_id).localeCompare(courtName(b.court_id)));
+            return activeBookings.length === 0 ? (
+              <div className="rounded-xl border border-border bg-background p-10 text-center shadow-sm">
+                <p className="text-sm text-muted">No bookings on {displayDate(date)}.</p>
+                <button onClick={() => openNewBooking()} className="mt-4 rounded-full bg-accent text-white px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">
+                  + New booking
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-border shadow-sm overflow-hidden">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-border bg-surface text-left">
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Time</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Space</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Booker</th>
+                      <th className="hidden sm:table-cell px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Phone</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {bookings.map((b, i) => {
-                      const past = isBookingPast(b);
-                      return (
-                        <tr
-                          key={b.id}
-                          className={[
-                            i === 0 ? "" : "border-t border-border",
-                            b.status === "cancelled" || b.status === "refunded" ? "opacity-50" : "hover:bg-accent/5",
-                            "transition-colors",
-                          ].join(" ")}
-                        >
-                          <td className="px-4 py-3 whitespace-nowrap text-foreground">
-                            <span className="text-sm font-medium">
-                              {new Date(b.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </span>
-                            {b.date === today && (
-                              <span className="ml-1.5 rounded-full bg-accent/15 text-accent px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest">Today</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{courtName(b.court_id)}</td>
-                          <td className="px-4 py-3 text-foreground whitespace-nowrap">{fmtTime(b.start_time)} – {fmtTime(b.end_time)}</td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-foreground">{b.booker_name}</p>
-                            <p className="text-xs text-muted">{b.booker_phone || "—"}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <StatusBadge status={b.status} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2 flex-wrap">
-                              <button
-                                onClick={() => setSelectedBooking(b)}
-                                className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-                              >
-                                View
-                              </button>
-                              {b.status === "pending_payment" && !past && (
-                                <button
-                                  onClick={() => onConfirmPayment(b.id)}
-                                  disabled={confirmingId === b.id}
-                                  className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
-                                >
-                                  {confirmingId === b.id ? "…" : "Confirm"}
-                                </button>
-                              )}
-                              {b.status !== "cancelled" && b.status !== "refunded" && !past && (
-                                <button
-                                  onClick={() => openReschedule(b)}
-                                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-                                >
-                                  Reschedule
-                                </button>
-                              )}
-                              {b.status !== "cancelled" && b.status !== "refunded" && !past && (
-                                <button
-                                  onClick={() => onCancelBooking(b.id)}
-                                  disabled={cancellingId === b.id}
-                                  className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
-                                >
-                                  {cancellingId === b.id ? "…" : "Cancel"}
-                                </button>
-                              )}
-                              {b.status !== "refunded" && past && (
-                                <button
-                                  onClick={() => setRefundTarget(b.id)}
-                                  disabled={refundingId === b.id}
-                                  className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
-                                >
-                                  {refundingId === b.id ? "…" : "Refund"}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {activeBookings.map((b, i) => (
+                      <tr
+                        key={b.id}
+                        onClick={() => setSelectedBooking(b)}
+                        className={`cursor-pointer hover:bg-accent/5 transition-colors ${i > 0 ? "border-t border-border" : ""}`}
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap tabular-nums text-foreground font-medium">
+                          {fmtTime(b.start_time)} – {fmtTime(b.end_time)}
+                        </td>
+                        <td className="px-4 py-3 text-foreground">{courtName(b.court_id)}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-foreground">{b.booker_name}</div>
+                          {b.notes && <div className="text-[11px] text-muted truncate max-w-40">{b.notes}</div>}
+                        </td>
+                        <td className="hidden sm:table-cell px-4 py-3 text-muted">{b.booker_phone || "—"}</td>
+                        <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            );
+          })()
+        ) : (
+          /* ── Grid view ── */
+          <>
+            <div className="overflow-x-auto rounded-2xl border border-border shadow-sm relative">
+              {/* Now indicator */}
+              {nowTop !== null && (
+                <div
+                  style={{ top: `${nowTop}px` }}
+                  className="absolute left-0 right-0 z-20 pointer-events-none flex items-center"
+                >
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 -ml-1" />
+                  <div className="flex-1 h-px bg-red-500" />
+                </div>
+              )}
 
-          {/* Pagination */}
-          {total > PAGE_SIZE && (
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-xs text-muted">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} bookings
-              </p>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-foreground hover:bg-accent/10 transition-colors disabled:opacity-40"
-                >
-                  <ChevronLeft size={15} />
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-                  .reduce<(number | "…")[]>((acc, p, idx, arr) => {
-                    if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
-                    acc.push(p);
-                    return acc;
-                  }, [])
-                  .map((p, idx) =>
-                    p === "…" ? (
-                      <span key={`e${idx}`} className="w-8 text-center text-xs text-muted">…</span>
-                    ) : (
-                      <button
-                        key={p}
-                        onClick={() => setPage(p as number)}
-                        className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
-                          page === p ? "bg-accent text-white" : "border border-border text-foreground hover:bg-accent/10"
-                        }`}
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-surface">
+                    <th className="px-3 sm:px-4 py-3.5 text-left text-[10px] uppercase tracking-widest text-muted font-bold w-24 sm:w-36 sticky left-0 bg-surface z-10 border-r border-border">
+                      Time
+                    </th>
+                    {courts.map((court) => (
+                      <th
+                        key={court.id}
+                        className={`px-3 sm:px-4 py-3.5 text-center min-w-28 sm:min-w-36 ${courts.length > 1 ? "border-l border-border" : ""}`}
                       >
-                        {p}
-                      </button>
-                    )
-                  )}
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-foreground hover:bg-accent/10 transition-colors disabled:opacity-40"
-                >
-                  <ChevronRight size={15} />
-                </button>
-              </div>
+                        <span className="text-sm font-bold text-foreground">{court.name}</span>
+                        {!court.is_active && (
+                          <span className="ml-1.5 rounded-full bg-border/60 text-muted px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal">
+                            inactive
+                          </span>
+                        )}
+                        {court.parent_court_id && (
+                          <div className="text-[10px] text-muted font-normal mt-0.5 normal-case tracking-normal">
+                            shared space
+                          </div>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody ref={tbodyRef}>
+                  {visibleSlotIndices.map((absIdx, rowIdx) => {
+                    const slot    = slots[absIdx];
+                    const slotH   = parseInt(slot.start.slice(0, 2), 10);
+                    const isNight = hasPricing && slotH >= nightHour;
+                    return (
+                      <tr
+                        key={slot.start}
+                        className={`${rowIdx === 0 ? "" : "border-t border-border"} ${isNight ? "bg-surface/30" : "bg-background"}`}
+                      >
+                        {/* Time label */}
+                        <td className={`px-3 sm:px-4 py-3 sticky left-0 z-10 border-r border-border whitespace-nowrap ${isNight ? "bg-surface/50" : "bg-background"}`}>
+                          <div className="text-sm font-semibold text-foreground tabular-nums">{fmtSlotTime(slot.start)}</div>
+                          {hasPricing && (
+                            <div className="text-[10px] text-muted mt-0.5 flex items-center gap-1">
+                              ₱{(isNight ? location!.night_rate : location!.day_rate).toFixed(0)}{halfHour ? "/halfhr" : "/hr"}
+                              {isNight && (
+                                <span className="rounded-full bg-border/50 px-1.5 py-px text-[9px] font-semibold uppercase tracking-widest text-muted">
+                                  Night
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Court cells */}
+                        {courts.map((court) => {
+                          const slotInfo = bookingSpanMap.get(court.id)?.get(absIdx);
+                          if (slotInfo && !slotInfo.isStart) return null;
+
+                          const booking  = slotInfo?.booking ?? null;
+                          const isPending = booking?.status === "pending_payment";
+                          const booked   = !!booking;
+                          const past     = isSlotPast(absIdx);
+                          const available = !booked && !past && court.is_active;
+                          const rowSpan  = slotInfo?.rowSpan ?? 1;
+
+                          return (
+                            <td
+                              key={court.id}
+                              rowSpan={rowSpan}
+                              onClick={() => {
+                                if (booked && booking) { setSelectedBooking(booking); }
+                                else if (available) { openNewBooking(court.id, absIdx); }
+                              }}
+                              className={`px-2 py-2 align-middle transition-colors ${courts.length > 1 ? "border-l border-border" : ""} ${
+                                booked
+                                  ? "cursor-pointer " + (isPending ? "bg-amber-50/80 hover:bg-amber-100/60" : "bg-accent/12 hover:bg-accent/20")
+                                  : available
+                                  ? "cursor-pointer hover:bg-accent/8 group/cell"
+                                  : "opacity-25 bg-surface"
+                              }`}
+                            >
+                              <div className={`w-full rounded-lg flex flex-col items-center justify-center text-xs font-semibold select-none ${rowSpan === 1 ? "py-3" : "py-2.5 gap-0.5"} ${
+                                booked
+                                  ? isPending ? "text-amber-700" : "text-accent/80"
+                                  : available
+                                  ? "text-accent/0 group-hover/cell:text-accent/50 transition-colors"
+                                  : "text-muted"
+                              }`}>
+                                {booked && booking ? (
+                                  <>
+                                    <span className="font-bold leading-tight text-center line-clamp-1">{booking.booker_name}</span>
+                                    {rowSpan > 1 && (
+                                      <span className="text-[10px] font-normal opacity-75">{fmtTime(booking.start_time)} – {fmtTime(booking.end_time)}</span>
+                                    )}
+                                    {isPending && rowSpan > 1 && (
+                                      <span className="mt-0.5 rounded-full bg-amber-100 text-amber-700 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider">Pending</span>
+                                    )}
+                                  </>
+                                ) : available ? (
+                                  <span>+</span>
+                                ) : null}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </section>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1">
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <span className="w-3 h-3 rounded-sm border border-dashed border-accent/40 shrink-0" />
+                Available
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <span className="w-3 h-3 rounded-sm bg-accent/12 shrink-0" />
+                Booked
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <span className="w-3 h-3 rounded-sm bg-amber-100 shrink-0" />
+                Pending payment
+              </span>
+            </div>
+          </>
+        )}
       </main>
 
       {/* ── New booking modal ── */}
@@ -432,7 +575,7 @@ export default function BookingsPage() {
               </div>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Court</label>
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Space</label>
                   <select value={adminBookingForm.court_id} onChange={(e) => setAdminBookingForm((f) => f && ({ ...f, court_id: e.target.value }))}
                     className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
                     {(courts ?? []).filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -449,7 +592,7 @@ export default function BookingsPage() {
                     <select value={adminBookingForm.start_hour}
                       onChange={(e) => { const h = Number(e.target.value); setAdminBookingForm((f) => f && ({ ...f, start_hour: h, end_hour: Math.max(f.end_hour, h + 1) })); }}
                       className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
-                      {TIME_SLOTS.slice(0, 23).map((s, i) => <option key={i} value={i}>{fmtTime(s.start + ":00")}</option>)}
+                      {TIME_SLOTS.slice(0, 23).map((s, i) => <option key={i} value={i}>{fmtTime(s.start)}</option>)}
                     </select>
                   </div>
                   <div className="flex-1">
@@ -458,7 +601,7 @@ export default function BookingsPage() {
                       className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
                       {TIME_SLOTS.slice(adminBookingForm.start_hour + 1).map((s, i) => {
                         const hour = adminBookingForm.start_hour + 1 + i;
-                        return <option key={hour} value={hour}>{fmtTime(s.start + ":00")}</option>;
+                        return <option key={hour} value={hour}>{fmtTime(s.start)}</option>;
                       })}
                     </select>
                   </div>
@@ -474,7 +617,7 @@ export default function BookingsPage() {
                     className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent" />
                 </div>
                 <div>
-                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Email <span className="normal-case font-normal">(optional)</span></label>
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Email</label>
                   <input type="email" value={adminBookingForm.booker_email} onChange={(e) => setAdminBookingForm((f) => f && ({ ...f, booker_email: e.target.value }))} placeholder="email@example.com"
                     className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent" />
                 </div>
@@ -491,7 +634,7 @@ export default function BookingsPage() {
                   Cancel
                 </button>
                 <button
-                  disabled={adminBookingSubmitting || !adminBookingForm.court_id || !adminBookingForm.booker_name.trim() || !adminBookingForm.booker_phone.trim()}
+                  disabled={adminBookingSubmitting || !adminBookingForm.court_id || !adminBookingForm.booker_name.trim() || !adminBookingForm.booker_phone.trim() || !adminBookingForm.booker_email.trim()}
                   onClick={async () => {
                     setAdminBookingSubmitting(true);
                     setAdminBookingError(null);
@@ -507,7 +650,7 @@ export default function BookingsPage() {
                           end_time: `${pad(adminBookingForm.end_hour)}:00`,
                           booker_name: adminBookingForm.booker_name,
                           booker_phone: adminBookingForm.booker_phone,
-                          booker_email: adminBookingForm.booker_email || null,
+                          booker_email: adminBookingForm.booker_email,
                           notes: adminBookingForm.notes || null,
                         }),
                       });
@@ -517,8 +660,7 @@ export default function BookingsPage() {
                         throw new Error(msg[json.error] ?? json.error ?? "Failed to create booking");
                       }
                       setAdminBookingForm(null);
-                      setPage(1);
-                      loadBookings(1, statusFilter, search);
+                      loadBookings(date);
                     } catch (err) {
                       setAdminBookingError((err as Error).message);
                     } finally {
@@ -554,9 +696,9 @@ export default function BookingsPage() {
               </div>
               <div className="px-5 py-4 space-y-3">
                 {[
-                  { label: "Court", value: courtName(selectedBooking.court_id) },
-                  { label: "Date",  value: displayDate(selectedBooking.date) },
-                  { label: "Time",  value: `${fmtTime(selectedBooking.start_time)} – ${fmtTime(selectedBooking.end_time)}` },
+                  { label: "Space",  value: courtName(selectedBooking.court_id) },
+                  { label: "Date",   value: displayDate(selectedBooking.date) },
+                  { label: "Time",   value: `${fmtTime(selectedBooking.start_time)} – ${fmtTime(selectedBooking.end_time)}` },
                   { label: "Booker", value: selectedBooking.booker_name },
                   { label: "Phone",  value: selectedBooking.booker_phone || "—" },
                   { label: "Email",  value: selectedBooking.booker_email ?? "—" },
@@ -681,7 +823,7 @@ export default function BookingsPage() {
               <p className="text-xs text-muted mt-1">Provide a reason (optional).</p>
             </div>
             <div className="px-5 py-4">
-              <textarea ref={refundReasonRef} placeholder="e.g. Court unavailable, player requested cancellation…" rows={3}
+              <textarea ref={refundReasonRef} placeholder="e.g. Venue unavailable, guest requested cancellation…" rows={3}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base sm:text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent resize-none" />
             </div>
             <div className="flex gap-2 border-t border-border px-5 py-4">

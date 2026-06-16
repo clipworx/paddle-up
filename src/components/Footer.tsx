@@ -33,9 +33,9 @@ export function Footer() {
         <div className="border-b border-border">
           <div className="mx-auto max-w-5xl px-4 py-8 sm:py-10 flex flex-col sm:flex-row items-center justify-between gap-6">
             <div>
-              <p className="text-sm font-bold text-foreground">Want to list your courts on ReZerve?</p>
+              <p className="text-sm font-bold text-foreground">Want to list your venue on ReZerve?</p>
               <p className="text-xs text-muted mt-0.5 max-w-sm">
-                Register your facility and let players discover and book your courts instantly.
+                Register your facility and let people discover and book your spaces instantly.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -90,8 +90,9 @@ export function Footer() {
           <span className="text-sm font-bold text-foreground">Re<span className="text-accent">Z</span>erve</span>
         </div>
         <div className="flex items-center gap-6 text-xs text-muted">
-          <Link href="/book" className="hover:text-foreground transition-colors">Book a court</Link>
+          <Link href="/book" className="hover:text-foreground transition-colors">Book now</Link>
           <Link href="/play" className="hover:text-foreground transition-colors">Open play</Link>
+          <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
           <Link href="/admin" className="hover:text-foreground transition-colors">Admin</Link>
         </div>
       </div>

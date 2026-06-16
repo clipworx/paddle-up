@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase-server";
 import { getAdminSupabase } from "@/lib/supabase-admin";
-import { sendBookingNotification } from "@/lib/email";
+import { sendBookingNotification, sendBookingConfirmation } from "@/lib/email";
+import { sendTelegramMessage, buildNewBookingMessage } from "@/lib/telegram";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
   const end_time = typeof body.end_time === "string" ? body.end_time.trim() : "";
   const booker_name = typeof body.booker_name === "string" ? body.booker_name.trim() : "";
   const booker_phone = typeof body.booker_phone === "string" ? body.booker_phone.trim() : "";
-  const booker_email = typeof body.booker_email === "string" ? body.booker_email.trim().toLowerCase() || null : null;
+  const booker_email = typeof body.booker_email === "string" ? body.booker_email.trim().toLowerCase() : "";
   const player_count = typeof body.player_count === "number" ? body.player_count : 4;
   const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
 
@@ -64,7 +65,10 @@ export async function POST(req: Request) {
   if (!/^(\+?63|0)9\d{9}$/.test(normalizedPhone)) {
     return NextResponse.json({ error: "phone_invalid" }, { status: 400 });
   }
-  if (booker_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
+  if (!booker_email) {
+    return NextResponse.json({ error: "email_required" }, { status: 400 });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
     return NextResponse.json({ error: "valid_email_required" }, { status: 400 });
   }
   if (player_count < 2 || player_count > 4) {
@@ -191,36 +195,53 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Fire-and-forget: notify the location admin by email
+  // Fire-and-forget: send confirmation to booker + notify location admin
+  const emailData = {
+    locationName: loc?.name ?? "",
+    courtName: courtRow?.name ?? "",
+    date: date as string,
+    startTime: start_time as string,
+    endTime: end_time as string,
+    bookerName: booker_name,
+    bookerEmail: booker_email,
+    playerCount: player_count,
+    notes,
+    status: status as "confirmed" | "pending_payment",
+    bookingId: data.id,
+  };
+
+  Promise.resolve(sendBookingConfirmation(emailData)).catch(() => {});
+
   if (courtRow?.location_id) {
     const adminSupabase = getAdminSupabase();
     adminSupabase
       .from("admins")
-      .select("email")
+      .select("email, telegram_chat_id")
       .eq("location_id", courtRow.location_id)
       .eq("role", "location_admin")
-      .not("email", "is", null)
       .limit(1)
       .single()
       .then(({ data: adminRow }) => {
         if (adminRow?.email) {
-          Promise.resolve(
-            sendBookingNotification(adminRow.email, {
-              locationName: loc?.name ?? "",
-              courtName: courtRow.name ?? "",
-              date,
-              startTime: start_time,
-              endTime: end_time,
-              bookerName: booker_name,
-              bookerEmail: booker_email ?? "",
-              playerCount: player_count,
-              notes,
-              status: status as "confirmed" | "pending_payment",
-              bookingId: data.id,
-            })
-          ).catch(() => {});
+          Promise.resolve(sendBookingNotification(adminRow.email, emailData)).catch(() => {});
         }
-      })
+        if (adminRow?.telegram_chat_id) {
+          Promise.resolve(sendTelegramMessage(
+            adminRow.telegram_chat_id,
+            buildNewBookingMessage({
+              locationName: emailData.locationName,
+              courtName: emailData.courtName,
+              date: emailData.date,
+              startTime: emailData.startTime,
+              endTime: emailData.endTime,
+              bookerName: emailData.bookerName,
+              bookerPhone: booker_phone,
+              bookerEmail: emailData.bookerEmail,
+              status: status as "confirmed" | "pending_payment",
+            })
+          )).catch(() => {});
+        }
+      });
   }
 
   return NextResponse.json({

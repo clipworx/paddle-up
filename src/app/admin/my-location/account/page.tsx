@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Bell, KeyRound, User } from "lucide-react";
+import { Bell, KeyRound, Send, User } from "lucide-react";
 
 type AccountData = {
   email: string | null;
   notify_new_booking: boolean;
   notify_cancellation: boolean;
   username: string;
+  telegram_chat_id: string | null;
 };
 
 export default function LocationAdminAccountPage() {
@@ -31,6 +32,16 @@ export default function LocationAdminAccountPage() {
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifSuccess, setNotifSuccess] = useState(false);
 
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [telegramSaving, setTelegramSaving] = useState(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
+  const [telegramSuccess, setTelegramSuccess] = useState(false);
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<"ok" | "error" | null>(null);
+  const [telegramConnecting, setTelegramConnecting] = useState(false);
+  const [showManualInput, setShowManualInput] = useState(false);
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/me");
     if (!res.ok) return;
@@ -40,9 +51,52 @@ export default function LocationAdminAccountPage() {
     setEmail(json.email ?? "");
     setNotifyBooking(json.notify_new_booking ?? true);
     setNotifyCancel(json.notify_cancellation ?? true);
+    setTelegramChatId(json.telegram_chat_id ?? "");
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  async function onConnectTelegram() {
+    setTelegramConnecting(true);
+    setTelegramError(null);
+    try {
+      const res = await fetch("/api/admin/me/telegram-link", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to generate link");
+      window.open(json.url, "_blank");
+
+      // Poll until the chat ID appears (up to 2 min)
+      let attempts = 0;
+      pollRef.current = setInterval(async () => {
+        attempts++;
+        const me = await fetch("/api/admin/me").then((r) => r.json()).catch(() => null);
+        if (me?.telegram_chat_id) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setTelegramConnecting(false);
+          await load();
+        } else if (attempts >= 40) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setTelegramConnecting(false);
+        }
+      }, 3000);
+    } catch (err) {
+      setTelegramError((err as Error).message);
+      setTelegramConnecting(false);
+    }
+  }
+
+  async function onDisconnectTelegram() {
+    await fetch("/api/admin/me", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ telegram_chat_id: null }),
+    });
+    await load();
+  }
 
   async function onSaveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -109,6 +163,42 @@ export default function LocationAdminAccountPage() {
       setTimeout(() => setNotifSuccess(false), 2000);
     } finally {
       setNotifSaving(false);
+    }
+  }
+
+  async function onSaveTelegram(e: React.FormEvent) {
+    e.preventDefault();
+    setTelegramSaving(true);
+    setTelegramError(null);
+    setTelegramSuccess(false);
+    try {
+      const res = await fetch("/api/admin/me", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ telegram_chat_id: telegramChatId.trim() || null }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      setTelegramSuccess(true);
+      setTimeout(() => setTelegramSuccess(false), 3000);
+      await load();
+    } catch (err) {
+      setTelegramError((err as Error).message);
+    } finally {
+      setTelegramSaving(false);
+    }
+  }
+
+  async function onTestTelegram() {
+    setTelegramTesting(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch("/api/admin/me/telegram-test", { method: "POST" });
+      setTelegramTestResult(res.ok ? "ok" : "error");
+    } catch {
+      setTelegramTestResult("error");
+    } finally {
+      setTelegramTesting(false);
+      setTimeout(() => setTelegramTestResult(null), 4000);
     }
   }
 
@@ -223,6 +313,101 @@ export default function LocationAdminAccountPage() {
           ))}
         </div>
         {notifSuccess && <p className="text-sm text-green-600">Preferences saved.</p>}
+      </div>
+
+      {/* Telegram */}
+      <div className="rounded-xl border border-border bg-background p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
+            <Send size={16} className="text-accent" />
+          </div>
+          <div>
+            <h2 className="text-[15px] font-bold text-foreground">Telegram notifications</h2>
+            <p className="text-xs text-muted">Get notified via Telegram when a booking is made or confirmed.</p>
+          </div>
+        </div>
+
+        {data.telegram_chat_id ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+              <span className="text-green-600 text-lg">✅</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-green-800">Connected</p>
+                <p className="text-[12px] text-green-700 font-mono truncate">Chat ID: {data.telegram_chat_id}</p>
+              </div>
+            </div>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={onTestTelegram}
+                disabled={telegramTesting}
+                className="rounded-full bg-accent text-white px-5 py-2.5 text-[14px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {telegramTesting ? "Sending…" : "Send test message"}
+              </button>
+              <button
+                type="button"
+                onClick={onDisconnectTelegram}
+                className="rounded-full border border-border px-5 py-2.5 text-[14px] font-semibold text-foreground hover:bg-surface transition-colors"
+              >
+                Disconnect
+              </button>
+            </div>
+            {telegramTestResult === "ok" && <p className="text-sm text-green-600">Test message sent! Check your Telegram.</p>}
+            {telegramTestResult === "error" && <p className="text-sm text-red-600">Failed to send.</p>}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {telegramConnecting ? (
+              <div className="rounded-xl border border-border bg-surface px-4 py-4 text-center space-y-1.5">
+                <p className="text-[14px] font-semibold text-foreground">Waiting for Telegram…</p>
+                <p className="text-[13px] text-muted">Tap <strong>Start</strong> in the bot to complete the connection.</p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onConnectTelegram}
+                className="w-full rounded-xl bg-accent text-white px-5 py-3 text-[14px] font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              >
+                <Send size={15} />
+                Connect Telegram
+              </button>
+            )}
+
+            {telegramError && <p className="text-sm text-red-600">{telegramError}</p>}
+
+            <button
+              type="button"
+              onClick={() => setShowManualInput((v) => !v)}
+              className="text-[12px] text-muted underline underline-offset-2"
+            >
+              {showManualInput ? "Hide manual entry" : "Enter Chat ID manually instead"}
+            </button>
+
+            {showManualInput && (
+              <form onSubmit={onSaveTelegram} className="space-y-3">
+                <div>
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Chat ID</label>
+                  <input
+                    type="text"
+                    value={telegramChatId}
+                    onChange={(e) => setTelegramChatId(e.target.value)}
+                    placeholder="e.g. 123456789"
+                    className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-[14px] text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent font-mono"
+                  />
+                </div>
+                {telegramSuccess && <p className="text-sm text-green-600">Telegram chat ID saved.</p>}
+                <button
+                  type="submit"
+                  disabled={telegramSaving}
+                  className="rounded-full bg-accent text-white px-5 py-2.5 text-[14px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {telegramSaving ? "Saving…" : "Save"}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
     </main>
   );

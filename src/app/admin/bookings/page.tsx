@@ -7,11 +7,10 @@ import { AdminNav } from "@/components/AdminNav";
 import { TIME_SLOTS } from "@/lib/types";
 import type { Booking, BookingStatus } from "@/lib/types";
 
-type BookingWithCourt = Booking & { court_name?: string | null };
+type BookingWithCourt = Booking & { court_name?: string | null; location_name?: string | null };
+type LocationOption = { id: string; name: string };
 
-function formatDate(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
+const TODAY = new Date().toISOString().split("T")[0];
 
 function displayDate(iso: string): string {
   const [y, m, day] = iso.split("-").map(Number);
@@ -118,7 +117,7 @@ function RefundDialog({ onConfirm, onClose }: {
   );
 }
 
-function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onReschedule, confirming, cancelling, refunding, isPast }: {
+function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onReschedule, confirming, cancelling, refunding }: {
   booking: BookingWithCourt;
   onClose: () => void;
   onConfirm: (id: string) => void;
@@ -128,8 +127,8 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
   confirming: boolean;
   cancelling: boolean;
   refunding: boolean;
-  isPast: boolean;
 }) {
+  const isPast = booking.date < TODAY;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
@@ -148,6 +147,7 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
         </div>
 
         <div className="px-5 py-4 space-y-3">
+          {booking.location_name && <Row label="Location" value={booking.location_name} />}
           <Row label="Court" value={booking.court_name ?? booking.court_id} />
           <Row label="Date" value={displayDate(booking.date)} />
           <Row label="Time" value={`${fmtTime(booking.start_time)} – ${fmtTime(booking.end_time)}`} />
@@ -228,8 +228,8 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
 
 export default function AdminBookingsPage() {
   const router = useRouter();
-  const today = formatDate(new Date());
-  const [date, setDate] = useState(today);
+  const [locationId, setLocationId] = useState("");
+  const [locations, setLocations] = useState<LocationOption[]>([]);
   const [bookings, setBookings] = useState<BookingWithCourt[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -237,6 +237,8 @@ export default function AdminBookingsPage() {
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<BookingWithCourt | null>(null);
   const [refundTarget, setRefundTarget] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const [rescheduleTarget, setRescheduleTarget]         = useState<BookingWithCourt | null>(null);
   const [rescheduleDate, setRescheduleDate]             = useState("");
@@ -245,23 +247,31 @@ export default function AdminBookingsPage() {
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
   const [rescheduleError, setRescheduleError]           = useState<string | null>(null);
 
-  const isPast = date < today;
-
-  const loadBookings = useCallback(async (d: string) => {
+  const loadBookings = useCallback(async (locId: string, pg: number) => {
     setError(null);
     setBookings(null);
     try {
-      const res = await fetch(`/api/admin/bookings?date=${d}`);
+      const params = new URLSearchParams({ page: String(pg), limit: "10" });
+      if (locId) params.set("location_id", locId);
+      const res = await fetch(`/api/admin/bookings?${params}`);
       if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load bookings");
       setBookings(json.bookings ?? []);
+      setTotal(json.total ?? 0);
     } catch (err) {
       setError((err as Error).message);
     }
   }, [router]);
 
-  useEffect(() => { loadBookings(date); }, [date, loadBookings]);
+  useEffect(() => {
+    fetch("/api/admin/locations")
+      .then((r) => r.json())
+      .then((j) => setLocations((j.locations ?? []).map((l: { id: string; name: string }) => ({ id: l.id, name: l.name }))))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadBookings(locationId, page); }, [locationId, page, loadBookings]);
 
   // Keep selected booking in sync after reload
   useEffect(() => {
@@ -279,7 +289,7 @@ export default function AdminBookingsPage() {
       if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Cancel failed");
-      await loadBookings(date);
+      await loadBookings(locationId, page);
       setSelected(null);
     } catch (err) {
       alert((err as Error).message);
@@ -295,7 +305,7 @@ export default function AdminBookingsPage() {
       if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Confirm failed");
-      await loadBookings(date);
+      await loadBookings(locationId, page);
       setSelected(null);
     } catch (err) {
       alert((err as Error).message);
@@ -318,7 +328,7 @@ export default function AdminBookingsPage() {
       if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Refund failed");
-      await loadBookings(date);
+      await loadBookings(locationId, page);
       setSelected(null);
     } catch (err) {
       alert((err as Error).message);
@@ -364,7 +374,7 @@ export default function AdminBookingsPage() {
         throw new Error(msg[json.error] ?? json.error ?? "Failed to reschedule");
       }
       setRescheduleTarget(null);
-      await loadBookings(date);
+      await loadBookings(locationId, page);
     } catch (err) {
       setRescheduleError((err as Error).message);
     } finally {
@@ -377,16 +387,7 @@ export default function AdminBookingsPage() {
     router.replace("/admin/login");
   }
 
-  function prevDay() {
-    const d = new Date(date + "T12:00:00");
-    d.setDate(d.getDate() - 1);
-    setDate(formatDate(d));
-  }
-  function nextDay() {
-    const d = new Date(date + "T12:00:00");
-    d.setDate(d.getDate() + 1);
-    setDate(formatDate(d));
-  }
+  const totalPages = Math.ceil(total / 10);
 
   return (
     <>
@@ -404,37 +405,20 @@ export default function AdminBookingsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={prevDay}
-            className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-          >
-            ‹
-          </button>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
-          />
-          <span className="text-sm text-muted hidden sm:block">{displayDate(date)}</span>
-          {date === today && (
-            <span className="rounded-full bg-accent/15 text-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-              Today
-            </span>
-          )}
-          {isPast && (
-            <span className="rounded-full bg-gray-100 text-gray-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-              Past
-            </span>
+          {locations.length > 0 && (
+            <select
+              value={locationId}
+              onChange={(e) => { setLocationId(e.target.value); setPage(1); }}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
+            >
+              <option value="">All locations</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
           )}
           <button
-            onClick={nextDay}
-            className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-          >
-            ›
-          </button>
-          <button
-            onClick={() => loadBookings(date)}
+            onClick={() => loadBookings(locationId, page)}
             className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors ml-auto"
           >
             Refresh
@@ -453,7 +437,7 @@ export default function AdminBookingsPage() {
 
         {bookings !== null && bookings.length === 0 && (
           <div className="rounded-xl border border-border bg-background/60 p-8 text-center shadow-sm">
-            <p className="text-sm text-muted">No bookings for {displayDate(date)}.</p>
+            <p className="text-sm text-muted">No bookings found.</p>
           </div>
         )}
 
@@ -464,89 +448,121 @@ export default function AdminBookingsPage() {
                 <thead className="bg-surface">
                   <tr className="text-left">
                     <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Court</th>
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Time</th>
+                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Date / Time</th>
                     <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Booker</th>
                     <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Status</th>
                     <th className="px-4 py-3 text-xs uppercase tracking-wide text-muted font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.map((b, i) => (
-                    <tr
-                      key={b.id}
-                      className={[
-                        i === 0 ? "" : "border-t border-border",
-                        b.status === "cancelled" || b.status === "refunded" ? "opacity-50" : "hover:bg-accent/5",
-                        "transition-colors",
-                      ].join(" ")}
-                    >
-                      <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">
-                        {b.court_name ?? b.court_id}
-                      </td>
-                      <td className="px-4 py-3 text-foreground whitespace-nowrap">
-                        {fmtTime(b.start_time)} – {fmtTime(b.end_time)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-foreground">{b.booker_name}</p>
-                        <p className="text-xs text-muted">{b.booker_phone || "—"}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <StatusBadge status={b.status} />
-                          {b.status === "refunded" && b.refund_reason && (
-                            <span className="text-[11px] text-muted leading-snug max-w-[160px]">{b.refund_reason}</span>
+                  {bookings.map((b, i) => {
+                    const rowIsPast = b.date < TODAY;
+                    return (
+                      <tr
+                        key={b.id}
+                        className={[
+                          i === 0 ? "" : "border-t border-border",
+                          b.status === "cancelled" || b.status === "refunded" ? "opacity-50" : "hover:bg-accent/5",
+                          "transition-colors",
+                        ].join(" ")}
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <p className="font-semibold text-foreground">{b.court_name ?? b.court_id}</p>
+                          {b.location_name && (
+                            <p className="text-xs text-muted">{b.location_name}</p>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2 flex-wrap">
-                          <button
-                            onClick={() => setSelected(b)}
-                            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-                          >
-                            View
-                          </button>
-                          {b.status === "pending_payment" && !isPast && (
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <p className="text-xs text-muted">{displayDate(b.date)}</p>
+                          <span className="text-foreground">{fmtTime(b.start_time)} – {fmtTime(b.end_time)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-foreground">{b.booker_name}</p>
+                          <p className="text-xs text-muted">{b.booker_phone || "—"}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                            <StatusBadge status={b.status} />
+                            {b.status === "refunded" && b.refund_reason && (
+                              <span className="text-[11px] text-muted leading-snug max-w-40">{b.refund_reason}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2 flex-wrap">
                             <button
-                              onClick={() => onConfirm(b.id)}
-                              disabled={confirmingId === b.id}
-                              className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
-                            >
-                              {confirmingId === b.id ? "…" : "Confirm"}
-                            </button>
-                          )}
-                          {b.status !== "cancelled" && b.status !== "refunded" && !isPast && (
-                            <button
-                              onClick={() => openReschedule(b)}
+                              onClick={() => setSelected(b)}
                               className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
                             >
-                              Reschedule
+                              View
                             </button>
-                          )}
-                          {b.status !== "cancelled" && b.status !== "refunded" && !isPast && (
-                            <button
-                              onClick={() => onCancel(b.id)}
-                              disabled={cancellingId === b.id}
-                              className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
-                            >
-                              {cancellingId === b.id ? "…" : "Cancel"}
-                            </button>
-                          )}
-                          {b.status !== "refunded" && isPast && (
-                            <button
-                              onClick={() => setRefundTarget(b.id)}
-                              disabled={refundingId === b.id}
-                              className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
-                            >
-                              {refundingId === b.id ? "…" : "Refund"}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {b.status === "pending_payment" && !rowIsPast && (
+                              <button
+                                onClick={() => onConfirm(b.id)}
+                                disabled={confirmingId === b.id}
+                                className="rounded-lg border border-green-400 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40"
+                              >
+                                {confirmingId === b.id ? "…" : "Confirm"}
+                              </button>
+                            )}
+                            {b.status !== "cancelled" && b.status !== "refunded" && !rowIsPast && (
+                              <button
+                                onClick={() => openReschedule(b)}
+                                className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+                              >
+                                Reschedule
+                              </button>
+                            )}
+                            {b.status !== "cancelled" && b.status !== "refunded" && !rowIsPast && (
+                              <button
+                                onClick={() => onCancel(b.id)}
+                                disabled={cancellingId === b.id}
+                                className="rounded-lg border border-accent/50 bg-accent/5 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+                              >
+                                {cancellingId === b.id ? "…" : "Cancel"}
+                              </button>
+                            )}
+                            {b.status !== "refunded" && rowIsPast && (
+                              <button
+                                onClick={() => setRefundTarget(b.id)}
+                                disabled={refundingId === b.id}
+                                className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
+                              >
+                                {refundingId === b.id ? "…" : "Refund"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {total > 10 && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted">
+              {((page - 1) * 10) + 1}–{Math.min(page * 10, total)} of {total} bookings
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ‹ Prev
+              </button>
+              <span className="text-sm text-muted tabular-nums">Page {page} of {totalPages}</span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next ›
+              </button>
             </div>
           </div>
         )}
@@ -563,7 +579,6 @@ export default function AdminBookingsPage() {
           confirming={confirmingId === selected.id}
           cancelling={cancellingId === selected.id}
           refunding={refundingId === selected.id}
-          isPast={isPast}
         />
       )}
 

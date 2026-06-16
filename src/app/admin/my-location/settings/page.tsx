@@ -698,18 +698,17 @@ export default function SettingsPage() {
                   key={theme.key}
                   type="button"
                   onClick={() => setSelectedColor(theme.key)}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-all ${
+                  className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2.5 text-left transition-all ${
                     selectedColor === theme.key
-                      ? "ring-2 ring-offset-1 ring-foreground scale-[1.02]"
-                      : "hover:scale-[1.02]"
+                      ? "scale-[1.03] shadow-sm"
+                      : "hover:scale-[1.02] opacity-80 hover:opacity-100"
                   }`}
                   style={{
-                    backgroundColor: theme.vars.background,
-                    borderColor: theme.vars.border,
-                    color: theme.vars.foreground,
+                    backgroundColor: theme.vars.surface,
+                    borderColor: selectedColor === theme.key ? theme.vars.accent : theme.vars.border,
                   }}
                 >
-                  <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: theme.vars.accent }} />
+                  <span className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/40" style={{ backgroundColor: theme.vars.accent }} />
                   <span className="text-xs font-semibold" style={{ color: theme.vars.foreground }}>{theme.name}</span>
                 </button>
               ))}
