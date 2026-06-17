@@ -69,6 +69,10 @@ export type AppState = {
   upcoming: PendingMatch[];
   history: CompletedMatch[];
   queue: string[];
+  queuePhase?: "append" | "interleave";
+  competitiveQueue?: string[];
+  competitiveQueuePhase?: "append" | "interleave";
+  courtTiers?: (SkillTier | null)[];
   skillSeparation?: boolean;
   skillBased?: boolean;
   lockedPairs?: [string, string][];

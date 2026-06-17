@@ -1,6 +1,15 @@
 "use client";
 
-import { PendingMatch, Player, isActive } from "@/lib/types";
+import { PendingMatch, Player, SkillLevel, isActive } from "@/lib/types";
+
+const SKILL_BADGE: Record<SkillLevel, { label: string; className: string }> = {
+  beginner:            { label: "Beg",   className: "bg-slate-500/15 text-slate-500" },
+  rookie:              { label: "Rok",   className: "bg-sky-500/15 text-sky-500" },
+  novice:              { label: "Nov",   className: "bg-emerald-500/15 text-emerald-500" },
+  "low intermediate":  { label: "L.Int", className: "bg-amber-500/15 text-amber-500" },
+  "high intermediate": { label: "H.Int", className: "bg-orange-500/15 text-orange-500" },
+  pro:                 { label: "Pro",   className: "bg-rose-500/15 text-rose-500" },
+};
 
 type Props = {
   players: Player[];
@@ -100,6 +109,9 @@ export function UpcomingMatches({ players, courts, upcoming }: Props) {
             </span>
             <span className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">
               {e.player.name}
+            </span>
+            <span className={`shrink-0 text-[10px] font-semibold rounded px-1.5 py-0.5 ${SKILL_BADGE[e.player.skill].className}`}>
+              {SKILL_BADGE[e.player.skill].label}
             </span>
             {badge(e)}
           </li>

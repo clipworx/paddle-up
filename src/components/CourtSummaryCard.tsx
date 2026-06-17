@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAnnouncer } from "@/hooks/useAnnouncer";
-import { PendingMatch, Player, ResultMode, ServingTeam } from "@/lib/types";
+import { PendingMatch, Player, ResultMode, ServingTeam, SkillTier } from "@/lib/types";
 
 type Props = {
   code: string;
@@ -15,10 +15,43 @@ type Props = {
   resultMode: ResultMode;
   onGenerate: () => void;
   onDeclareWinner: (winner: "A" | "B" | "tie") => void;
+  skillSeparation?: boolean;
+  courtTier?: SkillTier | null;
+  onSetTier?: (tier: SkillTier | null) => void;
 };
 
 function nameOf(players: Player[], id: string): string {
   return players.find((p) => p.id === id)?.name ?? "?";
+}
+
+function TierSelector({
+  tier,
+  onChange,
+}: {
+  tier: SkillTier | null;
+  onChange?: (t: SkillTier | null) => void;
+}) {
+  const options: [SkillTier | null, string][] = [
+    ["casual", "Cas"],
+    [null, "All"],
+    ["competitive", "Comp"],
+  ];
+  return (
+    <div className="flex rounded border border-border overflow-hidden text-[10px] font-semibold divide-x divide-border">
+      {options.map(([t, label]) => (
+        <button
+          key={String(t)}
+          type="button"
+          onClick={() => onChange?.(t)}
+          className={`px-1.5 py-0.5 transition-colors ${
+            tier === t ? "bg-accent text-background" : "text-muted hover:bg-accent/10"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function CourtSummaryCard({
@@ -31,6 +64,9 @@ export function CourtSummaryCard({
   resultMode,
   onGenerate,
   onDeclareWinner,
+  skillSeparation,
+  courtTier,
+  onSetTier,
 }: Props) {
   const [declaring, setDeclaring] = useState(false);
   const { speakSequence } = useAnnouncer();
@@ -66,12 +102,18 @@ export function CourtSummaryCard({
   const serving: ServingTeam = pending?.serving ?? "A";
   const scoreA = pending?.liveScoreA ?? 0;
   const scoreB = pending?.liveScoreB ?? 0;
+  const showTier = skillSeparation && !readOnly;
 
   if (!pending) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-background/60 p-5 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">{label}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-foreground">{label}</h2>
+            {showTier && (
+              <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
+            )}
+          </div>
           <Link
             href={href}
             className="text-xs text-muted hover:text-accent transition-colors"
@@ -118,7 +160,12 @@ export function CourtSummaryCard({
     return (
       <div className="rounded-xl border border-border bg-background/60 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+            {showTier && (
+              <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
+            )}
+          </div>
         </div>
         <div className="px-4 py-10 flex items-center justify-center gap-2 text-muted">
           <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
@@ -135,7 +182,12 @@ export function CourtSummaryCard({
     return (
       <div className="rounded-xl border border-border bg-background/60 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+            {showTier && (
+              <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -195,7 +247,12 @@ export function CourtSummaryCard({
   return (
     <div className="rounded-xl border border-border bg-background/60 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-foreground">{label}</h2>
+          {showTier && (
+            <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {!readOnly && (
             <button

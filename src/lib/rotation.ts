@@ -7,39 +7,7 @@ import {
   isActive,
 } from "./types";
 
-type PairKey = string;
 type MatchLike = { readonly teamA: Team; readonly teamB: Team };
-
-function pairKey(a: string, b: string): PairKey {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-
-type Stats = {
-  partnerCount: Map<PairKey, number>;
-  opponentCount: Map<PairKey, number>;
-};
-
-function buildStats(players: Player[], matches: readonly MatchLike[]): Stats {
-  const partnerCount = new Map<PairKey, number>();
-  const opponentCount = new Map<PairKey, number>();
-
-  const inc = (map: Map<PairKey, number>, a: string, b: string) => {
-    const k = pairKey(a, b);
-    map.set(k, (map.get(k) ?? 0) + 1);
-  };
-
-  for (const m of matches) {
-    inc(partnerCount, m.teamA[0], m.teamA[1]);
-    inc(partnerCount, m.teamB[0], m.teamB[1]);
-    for (const a of m.teamA) for (const b of m.teamB) inc(opponentCount, a, b);
-  }
-
-  return { partnerCount, opponentCount };
-}
-
-function skillDiff(a: Player, b: Player): number {
-  return Math.abs(SKILL_LEVELS.indexOf(a.skill) - SKILL_LEVELS.indexOf(b.skill));
-}
 
 type Arrangement = { teamA: [Player, Player]; teamB: [Player, Player] };
 
@@ -50,44 +18,6 @@ function arrangements(four: Player[]): Arrangement[] {
     { teamA: [p0, p2], teamB: [p1, p3] },
     { teamA: [p0, p3], teamB: [p1, p2] },
   ];
-}
-
-function scoreArrangement(
-  arr: Arrangement,
-  stats: Stats,
-  skillMode: boolean,
-  lockedPairs: [string, string][] = []
-): number {
-  const partnersA = stats.partnerCount.get(pairKey(arr.teamA[0].id, arr.teamA[1].id)) ?? 0;
-  const partnersB = stats.partnerCount.get(pairKey(arr.teamB[0].id, arr.teamB[1].id)) ?? 0;
-  let score = 0;
-  if (partnersA === 0) score += 10;
-  if (partnersB === 0) score += 10;
-  score -= partnersA + partnersB;
-
-  for (const a of arr.teamA) {
-    for (const b of arr.teamB) {
-      const c = stats.opponentCount.get(pairKey(a.id, b.id)) ?? 0;
-      if (c === 0) score += 5;
-      score -= c;
-    }
-  }
-
-  if (skillMode) {
-    const avg = (t: [Player, Player]) =>
-      (SKILL_LEVELS.indexOf(t[0].skill) + SKILL_LEVELS.indexOf(t[1].skill)) / 2;
-    score -= Math.abs(avg(arr.teamA) - avg(arr.teamB)) * 3;
-  }
-
-  for (const [a, b] of lockedPairs) {
-    const teamAIds = new Set([arr.teamA[0].id, arr.teamA[1].id]);
-    const teamBIds = new Set([arr.teamB[0].id, arr.teamB[1].id]);
-    score += (teamAIds.has(a) && teamAIds.has(b)) || (teamBIds.has(a) && teamBIds.has(b))
-      ? 100
-      : -200;
-  }
-
-  return score;
 }
 
 // Pick the next up-to-4 player IDs from the rotation queue.
@@ -143,18 +73,38 @@ export function pickNextFour(
   return result;
 }
 
-// Move played players to the back of the queue, preserving their relative order.
-export function advanceQueue(queue: string[], playedIds: string[]): string[] {
+// Advance the rotation queue after a match.
+// "append"    — played players go to the back so waiting players play first.
+// "interleave" — played players are woven back in so groups are reshuffled.
+// Callers alternate between the two phases so waiting players always play
+// before recently-played ones return, and groups change every other cycle.
+export function advanceQueue(
+  queue: string[],
+  playedIds: string[],
+  phase: "append" | "interleave" = "interleave"
+): string[] {
   const playedSet = new Set(playedIds);
   const remaining = queue.filter((id) => !playedSet.has(id));
   const playedInOrder = queue.filter((id) => playedSet.has(id));
-  return [...remaining, ...playedInOrder];
+  if (phase === "append") {
+    return [...remaining, ...playedInOrder];
+  }
+  const result: string[] = [];
+  const maxLen = Math.max(remaining.length, playedInOrder.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (i < remaining.length) result.push(remaining[i]);
+    if (i < playedInOrder.length) result.push(playedInOrder[i]);
+  }
+  return result;
 }
 
+// Team arrangement is determined purely by queue order.
+// When skillBased is on, pick the split that most evenly balances skill levels.
+// Locked pairs always end up on the same team regardless.
 export function generateMatch(
   queue: string[],
   players: Player[],
-  history: CompletedMatch[],
+  _history: CompletedMatch[],
   activeMatches: readonly MatchLike[] = [],
   upcoming: readonly PendingMatch[] = [],
   skillBased = false,
@@ -171,41 +121,39 @@ export function generateMatch(
 
   const playerMap = new Map(players.map((p) => [p.id, p]));
   const four = pickedIds.map((id) => playerMap.get(id)!);
-  const stats = buildStats(players, [...history, ...activeMatches, ...upcoming]);
 
-  // Locked pair must always be on the same team
   const lockedInFour = lockedPairs.find(
     ([a, b]) => pickedIds.includes(a) && pickedIds.includes(b)
   );
 
-  let opts: Arrangement[];
+  let teamA: [string, string];
+  let teamB: [string, string];
+
   if (lockedInFour) {
     const [idA, idB] = lockedInFour;
-    const pA = playerMap.get(idA)!;
-    const pB = playerMap.get(idB)!;
     const others = four.filter((p) => p.id !== idA && p.id !== idB);
-    opts = [
-      { teamA: [pA, pB], teamB: [others[0], others[1]] },
-      { teamA: [others[0], others[1]], teamB: [pA, pB] },
-    ];
-  } else {
-    opts = arrangements(four);
-  }
-
-  let best = opts[0];
-  let bestScore = -Infinity;
-  for (const opt of opts) {
-    const s = scoreArrangement(opt, stats, skillBased, lockedPairs);
-    if (s > bestScore) {
-      bestScore = s;
-      best = opt;
+    teamA = [idA, idB];
+    teamB = [others[0].id, others[1].id];
+  } else if (skillBased) {
+    const avg = (t: [Player, Player]) =>
+      (SKILL_LEVELS.indexOf(t[0].skill) + SKILL_LEVELS.indexOf(t[1].skill)) / 2;
+    let best = arrangements(four)[0];
+    let bestDiff = Infinity;
+    for (const opt of arrangements(four)) {
+      const diff = Math.abs(avg(opt.teamA) - avg(opt.teamB));
+      if (diff < bestDiff) { bestDiff = diff; best = opt; }
     }
+    teamA = [best.teamA[0].id, best.teamA[1].id];
+    teamB = [best.teamB[0].id, best.teamB[1].id];
+  } else {
+    teamA = [four[0].id, four[1].id];
+    teamB = [four[2].id, four[3].id];
   }
 
   return {
     id: crypto.randomUUID(),
-    teamA: [best.teamA[0].id, best.teamA[1].id],
-    teamB: [best.teamB[0].id, best.teamB[1].id],
+    teamA,
+    teamB,
     serving: "A",
     serverNumber: 2,
     liveScoreA: 0,
