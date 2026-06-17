@@ -72,6 +72,8 @@ export type AppState = {
   queuePhase?: "append" | "interleave";
   competitiveQueue?: string[];
   competitiveQueuePhase?: "append" | "interleave";
+  casualMatchCount?: number;
+  competitiveMatchCount?: number;
   courtTiers?: (SkillTier | null)[];
   skillSeparation?: boolean;
   skillBased?: boolean;

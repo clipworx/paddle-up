@@ -16,6 +16,7 @@ import { generateMatch, advanceQueue } from "@/lib/rotation";
 import {
   activeCourtMatches,
   fillQueue,
+  pickNextTier,
   resizeCourts,
 } from "@/lib/sessionHelpers";
 import { CompletedMatch, MAX_COURTS, PendingMatch, Player, ResultMode, SkillLevel, SkillTier, skillTier } from "@/lib/types";
@@ -66,11 +67,11 @@ export default function SessionPage({
       const courtTier = s.skillSeparation ? (s.courtTiers?.[courtIndex] ?? null) : null;
 
       if (courtTier) {
-        // Court has an explicit tier assignment — always generate fresh from that tier
+        // Court has an explicit tier assignment — always generate fresh from that tier.
+        // Pass s.players (not just tier players) so cross-tier locked partners are found.
         const activeCourts = activeCourtMatches(courts);
-        const tierPlayers = s.players.filter((p) => skillTier(p.skill) === courtTier);
         const tierQueue = courtTier === "casual" ? queue : (compQueue ?? []);
-        const fresh = generateMatch(tierQueue, tierPlayers, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
+        const fresh = generateMatch(tierQueue, s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
         if (!fresh) return s;
         courts[courtIndex] = fresh;
       } else if (s.upcoming.length > 0) {
@@ -79,19 +80,16 @@ export default function SessionPage({
         const activeCourts = activeCourtMatches(courts);
         const casualPlayers = s.players.filter((p) => skillTier(p.skill) === "casual");
         const compPlayers = s.players.filter((p) => skillTier(p.skill) === "competitive");
-        // Single court: alternate based on last completed match
-        let tryOrder: ("casual" | "competitive")[] = ["casual", "competitive"];
-        if (s.courts.length === 1 && s.history.length > 0) {
-          const last = s.history[s.history.length - 1];
-          const lp = s.players.find((p) => p.id === last.teamA[0]);
-          const lastTier = lp ? skillTier(lp.skill) : "casual";
-          tryOrder = lastTier === "casual" ? ["competitive", "casual"] : ["casual", "competitive"];
-        }
+        const next = pickNextTier(casualPlayers, compPlayers, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0);
+        const tryOrder: ("casual" | "competitive")[] = [next, next === "casual" ? "competitive" : "casual"];
         let fresh: PendingMatch | null = null;
         for (const tier of tryOrder) {
           const tq = tier === "casual" ? queue : (compQueue ?? []);
-          const tp = tier === "casual" ? casualPlayers : compPlayers;
-          fresh = generateMatch(tq, tp, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
+          const fillQ = tier === "casual" ? (compQueue ?? []) : queue;
+          // Pass s.players so cross-tier locked partners are visible to pickNextFour
+          fresh =
+            generateMatch(tq, s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []) ??
+            generateMatch([...tq, ...fillQ], s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
           if (fresh) break;
         }
         if (!fresh) return s;
@@ -105,7 +103,7 @@ export default function SessionPage({
       return {
         ...s,
         courts,
-        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue),
+        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
     if (generated) notify(`New match assigned to Court ${courtIndex + 1}`, "info");
@@ -121,17 +119,30 @@ export default function SessionPage({
       let compQueue = s.competitiveQueue;
       let queuePhase: "append" | "interleave" = s.queuePhase ?? "append";
       let compQueuePhase: "append" | "interleave" = s.competitiveQueuePhase ?? "append";
-      if (s.skillSeparation && compQueue) {
-        const firstPlayer = s.players.find((p) => p.id === m.teamA[0]);
-        if (firstPlayer && skillTier(firstPlayer.skill) === "competitive") {
-          compQueue = advanceQueue(compQueue, [...m.teamA, ...m.teamB], compQueuePhase);
-          compQueuePhase = compQueuePhase === "append" ? "interleave" : "append";
-        } else {
-          queue = advanceQueue(queue, [...m.teamA, ...m.teamB], queuePhase);
+      let casualMatchCount = s.casualMatchCount ?? 0;
+      let competitiveMatchCount = s.competitiveMatchCount ?? 0;
+      const played = [...m.teamA, ...m.teamB];
+      if (s.skillSeparation) {
+        const hasCasual = played.some((id) => {
+          const p = s.players.find((pl) => pl.id === id);
+          return p ? skillTier(p.skill) === "casual" : false;
+        });
+        const hasComp = played.some((id) => {
+          const p = s.players.find((pl) => pl.id === id);
+          return p ? skillTier(p.skill) === "competitive" : false;
+        });
+        if (hasCasual) {
+          queue = advanceQueue(queue, played, queuePhase);
           queuePhase = queuePhase === "append" ? "interleave" : "append";
+          casualMatchCount++;
+        }
+        if (hasComp && compQueue) {
+          compQueue = advanceQueue(compQueue, played, compQueuePhase);
+          compQueuePhase = compQueuePhase === "append" ? "interleave" : "append";
+          competitiveMatchCount++;
         }
       } else {
-        queue = advanceQueue(queue, [...m.teamA, ...m.teamB], queuePhase);
+        queue = advanceQueue(queue, played, queuePhase);
         queuePhase = queuePhase === "append" ? "interleave" : "append";
       }
       const courtTier = s.skillSeparation ? (s.courtTiers?.[courtIndex] ?? null) : null;
@@ -139,11 +150,11 @@ export default function SessionPage({
       courts[courtIndex] = null;
 
       if (courtTier) {
-        // Tier-assigned court: generate next match immediately from that tier
+        // Tier-assigned court: generate next match immediately from that tier.
+        // Pass s.players so cross-tier locked partners are visible to pickNextFour.
         const activeCourtsNow = activeCourtMatches(courts);
-        const tierPlayers = s.players.filter((p) => skillTier(p.skill) === courtTier);
         const tierQueue = courtTier === "casual" ? queue : (compQueue ?? []);
-        const nextMatch = generateMatch(tierQueue, tierPlayers, history, activeCourtsNow, [], s.skillBased === true, s.lockedPairs ?? []);
+        const nextMatch = generateMatch(tierQueue, s.players, history, activeCourtsNow, [], s.skillBased === true, s.lockedPairs ?? []);
         if (nextMatch) courts[courtIndex] = nextMatch;
       } else if (s.upcoming.length > 0) {
         courts[courtIndex] = s.upcoming[0];
@@ -156,8 +167,10 @@ export default function SessionPage({
         queuePhase,
         competitiveQueue: compQueue,
         competitiveQueuePhase: compQueuePhase,
+        casualMatchCount,
+        competitiveMatchCount,
         courts,
-        upcoming: fillQueue(queue, s.players, history, courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined),
+        upcoming: fillQueue(queue, s.players, history, courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, casualMatchCount, competitiveMatchCount),
       };
     });
     const label = winner === "tie" ? "Tie game" : winner === "A" ? "Team A wins" : "Team B wins";
@@ -195,7 +208,7 @@ export default function SessionPage({
         players,
         queue,
         competitiveQueue: compQueue,
-        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined),
+        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
   };
@@ -257,7 +270,7 @@ export default function SessionPage({
               ...s,
               players,
               courts,
-              upcoming: fillQueue(queue, players, s.history, courts, s.skillBased === true, lockedPairs, compQueue),
+              upcoming: fillQueue(queue, players, s.history, courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
             };
           }
         }
@@ -266,7 +279,7 @@ export default function SessionPage({
       return {
         ...s,
         players,
-        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, lockedPairs, compQueue),
+        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
   };
@@ -286,7 +299,7 @@ export default function SessionPage({
         queue,
         competitiveQueue: compQueue,
         courts,
-        upcoming: fillQueue(queue, players, s.history, courts, s.skillBased === true, lockedPairs, compQueue),
+        upcoming: fillQueue(queue, players, s.history, courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
   };
@@ -305,7 +318,7 @@ export default function SessionPage({
         courtCount: desired,
         courts,
         courtTiers: allNull ? undefined : courtTiers,
-        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue),
+        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
 
@@ -340,7 +353,9 @@ export default function SessionPage({
           queuePhase: "append",
           competitiveQueue: compQueue,
           competitiveQueuePhase: "append",
-          upcoming: fillQueue(queue, s.players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], compQueue),
+          casualMatchCount: 0,
+          competitiveMatchCount: 0,
+          upcoming: fillQueue(queue, s.players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, 0, 0),
         };
       } else {
         // Merge queues by interleaving: casual[0], comp[0], casual[1], comp[1], …
@@ -358,6 +373,8 @@ export default function SessionPage({
           queuePhase: "append",
           competitiveQueue: undefined,
           competitiveQueuePhase: undefined,
+          casualMatchCount: undefined,
+          competitiveMatchCount: undefined,
           upcoming: fillQueue(merged, s.players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? []),
         };
       }
@@ -370,7 +387,7 @@ export default function SessionPage({
       return {
         ...s,
         skillBased: next,
-        upcoming: fillQueue(queue, s.players, s.history, s.courts, next, s.lockedPairs ?? [], compQueue),
+        upcoming: fillQueue(queue, s.players, s.history, s.courts, next, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
 
@@ -385,7 +402,7 @@ export default function SessionPage({
       return {
         ...s,
         lockedPairs,
-        upcoming: fillQueue(queue, s.players, s.history, s.courts, s.skillBased === true, lockedPairs, compQueue),
+        upcoming: fillQueue(queue, s.players, s.history, s.courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
 
@@ -413,7 +430,7 @@ export default function SessionPage({
         players,
         queue,
         competitiveQueue: compQueue,
-        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined),
+        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
       };
     });
   };
