@@ -6,7 +6,7 @@ import { useLocationAdminContext } from "@/contexts/LocationAdminContext";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import type { Court, Booking, BookingStatus } from "@/lib/types";
 import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
-import { formatDate, fmtTime, displayDate } from "@/lib/admin-utils";
+import { formatDate, fmtTime, displayDate, ALL_HOURS_24, CLOSE_HOURS } from "@/lib/admin-utils";
 
 function normEnd(t: string): string {
   return t === "00:00" ? "24:00" : t;
@@ -278,7 +278,7 @@ export default function BookingsPage() {
         body: JSON.stringify({
           date: rescheduleDate,
           start_time: `${pad(rescheduleStartHour)}:00`,
-          end_time: `${pad(rescheduleEndHour)}:00`,
+          end_time: rescheduleEndHour === 24 ? "00:00" : `${pad(rescheduleEndHour)}:00`,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -737,17 +737,16 @@ export default function BookingsPage() {
                     <select value={adminBookingForm.start_hour}
                       onChange={(e) => { const h = Number(e.target.value); setAdminBookingForm((f) => f && ({ ...f, start_hour: h, end_hour: Math.max(f.end_hour, h + 1) })); }}
                       className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
-                      {TIME_SLOTS.slice(0, 23).map((s, i) => <option key={i} value={i}>{fmtTime(s.start)}</option>)}
+                      {ALL_HOURS_24.map(({ h, label }) => <option key={h} value={h}>{label}</option>)}
                     </select>
                   </div>
                   <div className="flex-1">
                     <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">End time</label>
                     <select value={adminBookingForm.end_hour} onChange={(e) => setAdminBookingForm((f) => f && ({ ...f, end_hour: Number(e.target.value) }))}
                       className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
-                      {TIME_SLOTS.slice(adminBookingForm.start_hour + 1).map((s, i) => {
-                        const hour = adminBookingForm.start_hour + 1 + i;
-                        return <option key={hour} value={hour}>{fmtTime(s.start)}</option>;
-                      })}
+                      {CLOSE_HOURS.filter(({ value }) => value > adminBookingForm.start_hour).map(({ value, label }) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -792,7 +791,7 @@ export default function BookingsPage() {
                           court_id: adminBookingForm.court_id,
                           date: adminBookingForm.date,
                           start_time: `${pad(adminBookingForm.start_hour)}:00`,
-                          end_time: `${pad(adminBookingForm.end_hour)}:00`,
+                          end_time: adminBookingForm.end_hour === 24 ? "00:00" : `${pad(adminBookingForm.end_hour)}:00`,
                           booker_name: adminBookingForm.booker_name,
                           booker_phone: adminBookingForm.booker_phone,
                           booker_email: adminBookingForm.booker_email,
@@ -924,17 +923,16 @@ export default function BookingsPage() {
                     <select value={rescheduleStartHour}
                       onChange={(e) => { const h = Number(e.target.value); setRescheduleStartHour(h); if (rescheduleEndHour <= h) setRescheduleEndHour(h + 1); }}
                       className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
-                      {TIME_SLOTS.slice(0, 23).map((s, i) => <option key={i} value={i}>{fmtTime(s.start)}</option>)}
+                      {ALL_HOURS_24.map(({ h, label }) => <option key={h} value={h}>{label}</option>)}
                     </select>
                   </div>
                   <div className="flex-1">
                     <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">End time</label>
                     <select value={rescheduleEndHour} onChange={(e) => setRescheduleEndHour(Number(e.target.value))}
                       className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
-                      {TIME_SLOTS.slice(rescheduleStartHour + 1).map((s, i) => {
-                        const hour = rescheduleStartHour + 1 + i;
-                        return <option key={hour} value={hour}>{fmtTime(s.start)}</option>;
-                      })}
+                      {CLOSE_HOURS.filter(({ value }) => value > rescheduleStartHour).map(({ value, label }) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
