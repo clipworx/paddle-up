@@ -6,8 +6,16 @@ import { CurrentMatch, MatchResult } from "@/components/CurrentMatch";
 import { EditLock } from "@/components/EditLock";
 import { useNotifications } from "@/components/Notifications";
 import { useSharedState } from "@/lib/sharedState";
-import { generateMatch, advanceQueue } from "@/lib/rotation";
-import { activeCourtMatches, fillQueue, pickNextTier } from "@/lib/sessionHelpers";
+import { advanceQueue } from "@/lib/rotation";
+import {
+  activeCourtMatches,
+  advanceLadder,
+  advanceWinnerLoser,
+  buildFillQueueContext,
+  buildGenerateForCourtContext,
+  fillQueue,
+  generateForCourt,
+} from "@/lib/sessionHelpers";
 import {
   CompletedMatch,
   PendingMatch,
@@ -47,6 +55,7 @@ export default function CourtScoringPage({
 
   const match = state.courts[courtIndex] ?? null;
   const resultMode = state.resultMode ?? "score";
+  const matchingStyle = state.matchingStyle ?? "auto-balanced";
 
   const handleSetResultMode = (mode: import("@/lib/types").ResultMode) => {
     setState((s) => ({ ...s, resultMode: mode }));
@@ -55,7 +64,7 @@ export default function CourtScoringPage({
   const skillMode = state.skillBased === true;
   const activePlayers = state.players.filter((p) => p.active !== false);
   const canGenerate = !match && (
-    state.skillSeparation
+    matchingStyle === "skill-courts"
       ? activePlayers.filter((p) => skillTier(p.skill) === "casual").length >= 4 ||
         activePlayers.filter((p) => skillTier(p.skill) === "competitive").length >= 4
       : activePlayers.length >= 4
@@ -65,48 +74,46 @@ export default function CourtScoringPage({
     let generated = false;
     setState((s) => {
       if (s.courts[courtIndex]) return s;
-      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
+      const style = s.matchingStyle ?? "auto-balanced";
       const courts = [...s.courts];
-      const courtTier = s.skillSeparation ? (s.courtTiers?.[courtIndex] ?? null) : null;
+      const courtTier = style === "skill-courts" ? (s.courtTiers?.[courtIndex] ?? null) : null;
 
-      if (courtTier) {
-        // Pass s.players so cross-tier locked partners are visible to pickNextFour
-        const activeCourts = activeCourtMatches(courts);
-        const tierQueue = courtTier === "casual" ? queue : (compQueue ?? []);
-        const fresh = generateMatch(tierQueue, s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
-        if (!fresh) return s;
-        courts[courtIndex] = fresh;
-      } else if (s.upcoming.length > 0) {
-        courts[courtIndex] = s.upcoming[0];
-      } else if (s.skillSeparation) {
-        const activeCourts = activeCourtMatches(courts);
-        const casualPlayers = s.players.filter((p) => skillTier(p.skill) === "casual");
-        const compPlayers = s.players.filter((p) => skillTier(p.skill) === "competitive");
-        const next = pickNextTier(casualPlayers, compPlayers, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0);
-        const tryOrder: ("casual" | "competitive")[] = [next, next === "casual" ? "competitive" : "casual"];
-        let fresh: PendingMatch | null = null;
-        for (const tier of tryOrder) {
-          const tq = tier === "casual" ? queue : (compQueue ?? []);
-          const fillQ = tier === "casual" ? (compQueue ?? []) : queue;
-          // Pass s.players so cross-tier locked partners are visible to pickNextFour
-          fresh =
-            generateMatch(tq, s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []) ??
-            generateMatch([...tq, ...fillQ], s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
-          if (fresh) break;
-        }
-        if (!fresh) return s;
-        courts[courtIndex] = fresh;
+      let fresh: PendingMatch | null = null;
+      let ladderPending = s.ladderPending;
+      let ladderQueue = s.ladderQueue;
+      let queueOverride: string[] | undefined;
+      let compQueueOverride: string[] | undefined;
+      let winnerQueueOverride: string[] | undefined;
+      let loserQueueOverride: string[] | undefined;
+
+      if (s.upcoming.length > 0 && !courtTier && style !== "king-of-court") {
+        fresh = s.upcoming[0];
       } else {
-        const fresh = generateMatch(queue, s.players, s.history, activeCourtMatches(courts), [], s.skillBased === true, s.lockedPairs ?? []);
-        if (!fresh) return s;
-        courts[courtIndex] = fresh;
+        const result = generateForCourt(buildGenerateForCourtContext(s, courtIndex, activeCourtMatches(courts)));
+        fresh = result.match;
+        queueOverride = result.queue;
+        compQueueOverride = result.competitiveQueue;
+        winnerQueueOverride = result.winnerQueue;
+        loserQueueOverride = result.loserQueue;
+        if (result.ladderPending) ladderPending = result.ladderPending;
+        if (result.ladderQueue) ladderQueue = result.ladderQueue;
       }
+      if (!fresh) return s;
+      courts[courtIndex] = fresh;
       generated = true;
+
       return {
         ...s,
         courts,
-        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        ...(queueOverride ? { queue: queueOverride } : {}),
+        ...(compQueueOverride ? { competitiveQueue: compQueueOverride } : {}),
+        ...(winnerQueueOverride ? { winnerQueue: winnerQueueOverride } : {}),
+        ...(loserQueueOverride ? { loserQueue: loserQueueOverride } : {}),
+        ladderPending,
+        ladderQueue,
+        upcoming: fillQueue(buildFillQueueContext(s, courts, {
+          queue: queueOverride, competitiveQueue: compQueueOverride, winnerQueue: winnerQueueOverride, loserQueue: loserQueueOverride,
+        })),
       };
     });
     if (generated) notify(`New match assigned to Court ${courtIndex + 1}`, "info");
@@ -125,14 +132,22 @@ export default function CourtScoringPage({
         completedAt: Date.now(),
       };
       const history = [...s.history, completed];
+      const style = s.matchingStyle ?? "auto-balanced";
+      const played = [...m.teamA, ...m.teamB];
+
+      const courts = [...s.courts];
+      courts[courtIndex] = null;
+
       let queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
       let compQueue = s.competitiveQueue;
-      let queuePhase: "append" | "interleave" = s.queuePhase ?? "append";
-      let compQueuePhase: "append" | "interleave" = s.competitiveQueuePhase ?? "append";
       let casualMatchCount = s.casualMatchCount ?? 0;
       let competitiveMatchCount = s.competitiveMatchCount ?? 0;
-      const played = [...m.teamA, ...m.teamB];
-      if (s.skillSeparation) {
+      let winnerQueue = s.winnerQueue ?? [];
+      let loserQueue = s.loserQueue ?? [];
+      let ladderPending = s.ladderPending ?? { promote: {}, relegate: {} };
+      let ladderQueue = s.ladderQueue ?? [];
+
+      if (style === "skill-courts") {
         const hasCasual = played.some((id) => {
           const p = s.players.find((pl) => pl.id === id);
           return p ? skillTier(p.skill) === "casual" : false;
@@ -141,46 +156,50 @@ export default function CourtScoringPage({
           const p = s.players.find((pl) => pl.id === id);
           return p ? skillTier(p.skill) === "competitive" : false;
         });
-        if (hasCasual) {
-          queue = advanceQueue(queue, played, queuePhase);
-          queuePhase = queuePhase === "append" ? "interleave" : "append";
-          casualMatchCount++;
-        }
-        if (hasComp && compQueue) {
-          compQueue = advanceQueue(compQueue, played, compQueuePhase);
-          compQueuePhase = compQueuePhase === "append" ? "interleave" : "append";
-          competitiveMatchCount++;
-        }
+        if (hasCasual) { queue = advanceQueue(queue, played); casualMatchCount++; }
+        if (hasComp) { compQueue = advanceQueue(compQueue ?? [], played); competitiveMatchCount++; }
+      } else if (style === "winner-loser-groups") {
+        const winLoss = advanceWinnerLoser(m.teamA, m.teamB, result.winner, winnerQueue, loserQueue);
+        winnerQueue = winLoss.winnerQueue;
+        loserQueue = winLoss.loserQueue;
+      } else if (style === "king-of-court") {
+        const ladder = advanceLadder(courtIndex, s.courtCount, m.teamA, m.teamB, result.winner, ladderPending, ladderQueue);
+        ladderPending = ladder.ladderPending;
+        ladderQueue = ladder.ladderQueue;
       } else {
-        queue = advanceQueue(queue, played, queuePhase);
-        queuePhase = queuePhase === "append" ? "interleave" : "append";
+        queue = advanceQueue(queue, played);
       }
-      const courtTier = s.skillSeparation ? (s.courtTiers?.[courtIndex] ?? null) : null;
-      const courts = [...s.courts];
-      courts[courtIndex] = null;
 
-      if (courtTier) {
-        // Pass s.players so cross-tier locked partners are visible to pickNextFour
-        const activeCourtsNow = activeCourtMatches(courts);
-        const tierQueue = courtTier === "casual" ? queue : (compQueue ?? []);
-        const nextMatch = generateMatch(tierQueue, s.players, history, activeCourtsNow, [], s.skillBased === true, s.lockedPairs ?? []);
-        if (nextMatch) courts[courtIndex] = nextMatch;
-      } else if (s.upcoming.length > 0) {
-        courts[courtIndex] = s.upcoming[0];
-      }
+      const genResult = generateForCourt(
+        buildGenerateForCourtContext(s, courtIndex, activeCourtMatches(courts), {
+          queue, competitiveQueue: compQueue, winnerQueue, loserQueue, ladderPending, ladderQueue,
+          history, casualMatchCount, competitiveMatchCount,
+        })
+      );
+      if (genResult.match) courts[courtIndex] = genResult.match;
+      if (genResult.queue) queue = genResult.queue;
+      if (genResult.competitiveQueue) compQueue = genResult.competitiveQueue;
+      if (genResult.winnerQueue) winnerQueue = genResult.winnerQueue;
+      if (genResult.loserQueue) loserQueue = genResult.loserQueue;
+      if (genResult.ladderPending) ladderPending = genResult.ladderPending;
+      if (genResult.ladderQueue) ladderQueue = genResult.ladderQueue;
 
       recorded = true;
       return {
         ...s,
         history,
         queue,
-        queuePhase,
         competitiveQueue: compQueue,
-        competitiveQueuePhase: compQueuePhase,
         casualMatchCount,
         competitiveMatchCount,
+        winnerQueue,
+        loserQueue,
+        ladderPending,
+        ladderQueue,
         courts,
-        upcoming: fillQueue(queue, s.players, history, courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, casualMatchCount, competitiveMatchCount),
+        upcoming: fillQueue(buildFillQueueContext(s, courts, {
+          queue, competitiveQueue: compQueue, winnerQueue, loserQueue, history, casualMatchCount, competitiveMatchCount,
+        })),
       };
     });
     if (recorded) {
@@ -200,14 +219,12 @@ export default function CourtScoringPage({
 
   const handleCancel = () => {
     setState((s) => {
-      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
       const courts = [...s.courts];
       courts[courtIndex] = null;
       return {
         ...s,
         courts,
-        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        upcoming: fillQueue(buildFillQueueContext(s, courts)),
       };
     });
     notify(`Court ${courtIndex + 1} cleared`, "warning");

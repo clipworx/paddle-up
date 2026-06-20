@@ -18,10 +18,20 @@ type Props = {
   skillSeparation?: boolean;
   courtTier?: SkillTier | null;
   onSetTier?: (tier: SkillTier | null) => void;
+  ladderRank?: { rank: number; total: number };
 };
 
 function nameOf(players: Player[], id: string): string {
   return players.find((p) => p.id === id)?.name ?? "?";
+}
+
+function RankBadge({ rank, total }: { rank: number; total: number }) {
+  const label = rank === 1 ? "Top court" : rank === total ? "Bottom court" : `Rank ${rank} of ${total}`;
+  return (
+    <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted">
+      {label}
+    </span>
+  );
 }
 
 function TierSelector({
@@ -67,6 +77,7 @@ export function CourtSummaryCard({
   skillSeparation,
   courtTier,
   onSetTier,
+  ladderRank,
 }: Props) {
   const [declaring, setDeclaring] = useState(false);
   const { speakSequence } = useAnnouncer();
@@ -113,6 +124,7 @@ export function CourtSummaryCard({
             {showTier && (
               <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
             )}
+            {ladderRank && <RankBadge rank={ladderRank.rank} total={ladderRank.total} />}
           </div>
           <Link
             href={href}
@@ -165,6 +177,7 @@ export function CourtSummaryCard({
             {showTier && (
               <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
             )}
+            {ladderRank && <RankBadge rank={ladderRank.rank} total={ladderRank.total} />}
           </div>
         </div>
         <div className="px-4 py-10 flex items-center justify-center gap-2 text-muted">
@@ -187,6 +200,7 @@ export function CourtSummaryCard({
             {showTier && (
               <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
             )}
+            {ladderRank && <RankBadge rank={ladderRank.rank} total={ladderRank.total} />}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -252,6 +266,7 @@ export function CourtSummaryCard({
           {showTier && (
             <TierSelector tier={courtTier ?? null} onChange={onSetTier} />
           )}
+          {ladderRank && <RankBadge rank={ladderRank.rank} total={ladderRank.total} />}
         </div>
         <div className="flex items-center gap-3">
           {!readOnly && (

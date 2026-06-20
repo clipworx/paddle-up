@@ -1,15 +1,13 @@
 "use client";
 
-import { MAX_COURTS } from "@/lib/types";
+import { MATCHING_STYLES, MAX_COURTS, MatchingStyle } from "@/lib/types";
 
 type Props = {
   courtCount: number;
   readOnly?: boolean;
-  skillSeparation: boolean;
-  skillBased: boolean;
+  matchingStyle: MatchingStyle;
   onChange: (n: number) => void;
-  onToggleSkillSeparation: (next: boolean) => void;
-  onToggleSkillBased: (next: boolean) => void;
+  onSelectStyle: (next: MatchingStyle) => void;
 };
 
 const MIN = 1;
@@ -18,11 +16,9 @@ const MAX = MAX_COURTS;
 export function CourtConfig({
   courtCount,
   readOnly,
-  skillSeparation,
-  skillBased,
+  matchingStyle,
   onChange,
-  onToggleSkillSeparation,
-  onToggleSkillBased,
+  onSelectStyle,
 }: Props) {
   return (
     <section className="rounded-xl border border-border bg-background/60 p-4 shadow-sm space-y-4">
@@ -59,65 +55,44 @@ export function CourtConfig({
         </p>
       </div>
 
-      <div className="pt-4 border-t border-border space-y-4">
-        {/* Skill-based matching */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">
-              Skill-based matching
-            </h3>
-            <p className="text-xs text-muted mt-0.5">
-              {skillBased
-                ? "Always groups players of similar skill levels together."
-                : "Players are matched by rotation fairness alone."}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={skillBased}
-            disabled={readOnly}
-            onClick={() => onToggleSkillBased(!skillBased)}
-            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${
-              skillBased ? "bg-accent" : "bg-border"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 w-5 h-5 rounded-full bg-background shadow transition-transform ${
-                skillBased ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Skill separation */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">
-              Skill separation
-            </h3>
-            <p className="text-xs text-muted mt-0.5">
-              {skillSeparation
-                ? "Casual (beginner, rookie, novice) and competitive (low / high intermediate, pro) play in their own rotations."
-                : "All players mix — everyone partners with everyone over time."}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={skillSeparation}
-            disabled={readOnly}
-            onClick={() => onToggleSkillSeparation(!skillSeparation)}
-            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 ${
-              skillSeparation ? "bg-accent" : "bg-border"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 w-5 h-5 rounded-full bg-background shadow transition-transform ${
-                skillSeparation ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+      <div className="pt-4 border-t border-border space-y-2">
+        <h3 className="text-sm font-semibold text-foreground mb-1">
+          Matching style
+        </h3>
+        <div className="space-y-2">
+          {MATCHING_STYLES.map((opt) => {
+            const selected = matchingStyle === opt.value;
+            const disabled = readOnly || opt.comingSoon;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={disabled}
+                onClick={() => onSelectStyle(opt.value)}
+                className={`w-full text-left rounded-lg border p-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  selected
+                    ? "border-accent bg-accent/10"
+                    : "border-border hover:border-accent/50 hover:bg-accent/5"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    {opt.label}
+                  </span>
+                  {opt.comingSoon ? (
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide font-semibold text-muted bg-border/60 rounded-full px-2 py-0.5">
+                      Coming soon
+                    </span>
+                  ) : selected ? (
+                    <span className="shrink-0 text-accent">✓</span>
+                  ) : null}
+                </div>
+                <p className="text-xs text-muted mt-0.5">{opt.description}</p>
+              </button>
+            );
+          })}
         </div>
       </div>
     </section>

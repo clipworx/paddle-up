@@ -12,14 +12,31 @@ import { EditLock } from "@/components/EditLock";
 import { Logo } from "@/components/Logo";
 import { useNotifications } from "@/components/Notifications";
 import { useSharedState } from "@/lib/sharedState";
-import { generateMatch, advanceQueue } from "@/lib/rotation";
+import { advanceQueue } from "@/lib/rotation";
 import {
   activeCourtMatches,
+  advanceLadder,
+  advanceWinnerLoser,
+  buildFillQueueContext,
+  buildGenerateForCourtContext,
   fillQueue,
-  pickNextTier,
+  generateForCourt,
+  removeFromLadder,
+  resetSession,
   resizeCourts,
+  transitionToStyle,
 } from "@/lib/sessionHelpers";
-import { CompletedMatch, MAX_COURTS, PendingMatch, Player, ResultMode, SkillLevel, SkillTier, skillTier } from "@/lib/types";
+import {
+  CompletedMatch,
+  MAX_COURTS,
+  MatchingStyle,
+  PendingMatch,
+  Player,
+  ResultMode,
+  SkillLevel,
+  SkillTier,
+  skillTier,
+} from "@/lib/types";
 
 export default function SessionPage({
   params,
@@ -41,18 +58,17 @@ export default function SessionPage({
     deleteSession,
   } = useSharedState(normalized);
   const readOnly = !isEditor;
-  const skillBased = state.skillBased === true;
-  const skillSeparation = state.skillSeparation === true;
+  const matchingStyle: MatchingStyle = state.matchingStyle ?? "auto-balanced";
+  const isSkillCourts = matchingStyle === "skill-courts";
+  const isKingOfCourt = matchingStyle === "king-of-court";
   const lockedPairs = state.lockedPairs ?? [];
   const resultMode: ResultMode = state.resultMode ?? "score";
-  // Fallback for sessions created before queue was introduced
-  const q = state.queue?.length ? state.queue : state.players.map((p) => p.id);
 
   const handleSetResultMode = (mode: ResultMode) =>
     setState((s) => ({ ...s, resultMode: mode }));
 
   const activePlayers = state.players.filter((p) => p.active !== false);
-  const canGenerateAny = skillSeparation
+  const canGenerateAny = isSkillCourts
     ? activePlayers.filter((p) => skillTier(p.skill) === "casual").length >= 4 ||
       activePlayers.filter((p) => skillTier(p.skill) === "competitive").length >= 4
     : activePlayers.length >= 4;
@@ -61,49 +77,46 @@ export default function SessionPage({
     let generated = false;
     setState((s) => {
       if (s.courts[courtIndex]) return s;
-      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
+      const style = s.matchingStyle ?? "auto-balanced";
       const courts = [...s.courts];
-      const courtTier = s.skillSeparation ? (s.courtTiers?.[courtIndex] ?? null) : null;
+      const courtTier = style === "skill-courts" ? (s.courtTiers?.[courtIndex] ?? null) : null;
 
-      if (courtTier) {
-        // Court has an explicit tier assignment — always generate fresh from that tier.
-        // Pass s.players (not just tier players) so cross-tier locked partners are found.
-        const activeCourts = activeCourtMatches(courts);
-        const tierQueue = courtTier === "casual" ? queue : (compQueue ?? []);
-        const fresh = generateMatch(tierQueue, s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
-        if (!fresh) return s;
-        courts[courtIndex] = fresh;
-      } else if (s.upcoming.length > 0) {
-        courts[courtIndex] = s.upcoming[0];
-      } else if (s.skillSeparation) {
-        const activeCourts = activeCourtMatches(courts);
-        const casualPlayers = s.players.filter((p) => skillTier(p.skill) === "casual");
-        const compPlayers = s.players.filter((p) => skillTier(p.skill) === "competitive");
-        const next = pickNextTier(casualPlayers, compPlayers, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0);
-        const tryOrder: ("casual" | "competitive")[] = [next, next === "casual" ? "competitive" : "casual"];
-        let fresh: PendingMatch | null = null;
-        for (const tier of tryOrder) {
-          const tq = tier === "casual" ? queue : (compQueue ?? []);
-          const fillQ = tier === "casual" ? (compQueue ?? []) : queue;
-          // Pass s.players so cross-tier locked partners are visible to pickNextFour
-          fresh =
-            generateMatch(tq, s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []) ??
-            generateMatch([...tq, ...fillQ], s.players, s.history, activeCourts, [], s.skillBased === true, s.lockedPairs ?? []);
-          if (fresh) break;
-        }
-        if (!fresh) return s;
-        courts[courtIndex] = fresh;
+      let fresh: PendingMatch | null = null;
+      let ladderPending = s.ladderPending;
+      let ladderQueue = s.ladderQueue;
+      let queueOverride: string[] | undefined;
+      let compQueueOverride: string[] | undefined;
+      let winnerQueueOverride: string[] | undefined;
+      let loserQueueOverride: string[] | undefined;
+
+      if (s.upcoming.length > 0 && !courtTier && style !== "king-of-court") {
+        fresh = s.upcoming[0];
       } else {
-        const fresh = generateMatch(queue, s.players, s.history, activeCourtMatches(courts), [], s.skillBased === true, s.lockedPairs ?? []);
-        if (!fresh) return s;
-        courts[courtIndex] = fresh;
+        const result = generateForCourt(buildGenerateForCourtContext(s, courtIndex, activeCourtMatches(courts)));
+        fresh = result.match;
+        queueOverride = result.queue;
+        compQueueOverride = result.competitiveQueue;
+        winnerQueueOverride = result.winnerQueue;
+        loserQueueOverride = result.loserQueue;
+        if (result.ladderPending) ladderPending = result.ladderPending;
+        if (result.ladderQueue) ladderQueue = result.ladderQueue;
       }
+      if (!fresh) return s;
+      courts[courtIndex] = fresh;
       generated = true;
+
       return {
         ...s,
         courts,
-        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        ...(queueOverride ? { queue: queueOverride } : {}),
+        ...(compQueueOverride ? { competitiveQueue: compQueueOverride } : {}),
+        ...(winnerQueueOverride ? { winnerQueue: winnerQueueOverride } : {}),
+        ...(loserQueueOverride ? { loserQueue: loserQueueOverride } : {}),
+        ladderPending,
+        ladderQueue,
+        upcoming: fillQueue(buildFillQueueContext(s, courts, {
+          queue: queueOverride, competitiveQueue: compQueueOverride, winnerQueue: winnerQueueOverride, loserQueue: loserQueueOverride,
+        })),
       };
     });
     if (generated) notify(`New match assigned to Court ${courtIndex + 1}`, "info");
@@ -115,14 +128,22 @@ export default function SessionPage({
       if (!m) return s;
       const completed: CompletedMatch = { ...m, winner, completedAt: Date.now() };
       const history = [...s.history, completed];
+      const style = s.matchingStyle ?? "auto-balanced";
+      const played = [...m.teamA, ...m.teamB];
+
+      const courts = [...s.courts];
+      courts[courtIndex] = null;
+
       let queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
       let compQueue = s.competitiveQueue;
-      let queuePhase: "append" | "interleave" = s.queuePhase ?? "append";
-      let compQueuePhase: "append" | "interleave" = s.competitiveQueuePhase ?? "append";
       let casualMatchCount = s.casualMatchCount ?? 0;
       let competitiveMatchCount = s.competitiveMatchCount ?? 0;
-      const played = [...m.teamA, ...m.teamB];
-      if (s.skillSeparation) {
+      let winnerQueue = s.winnerQueue ?? [];
+      let loserQueue = s.loserQueue ?? [];
+      let ladderPending = s.ladderPending ?? { promote: {}, relegate: {} };
+      let ladderQueue = s.ladderQueue ?? [];
+
+      if (style === "skill-courts") {
         const hasCasual = played.some((id) => {
           const p = s.players.find((pl) => pl.id === id);
           return p ? skillTier(p.skill) === "casual" : false;
@@ -131,46 +152,49 @@ export default function SessionPage({
           const p = s.players.find((pl) => pl.id === id);
           return p ? skillTier(p.skill) === "competitive" : false;
         });
-        if (hasCasual) {
-          queue = advanceQueue(queue, played, queuePhase);
-          queuePhase = queuePhase === "append" ? "interleave" : "append";
-          casualMatchCount++;
-        }
-        if (hasComp && compQueue) {
-          compQueue = advanceQueue(compQueue, played, compQueuePhase);
-          compQueuePhase = compQueuePhase === "append" ? "interleave" : "append";
-          competitiveMatchCount++;
-        }
+        if (hasCasual) { queue = advanceQueue(queue, played); casualMatchCount++; }
+        if (hasComp) { compQueue = advanceQueue(compQueue ?? [], played); competitiveMatchCount++; }
+      } else if (style === "winner-loser-groups") {
+        const result = advanceWinnerLoser(m.teamA, m.teamB, winner, winnerQueue, loserQueue);
+        winnerQueue = result.winnerQueue;
+        loserQueue = result.loserQueue;
+      } else if (style === "king-of-court") {
+        const result = advanceLadder(courtIndex, s.courtCount, m.teamA, m.teamB, winner, ladderPending, ladderQueue);
+        ladderPending = result.ladderPending;
+        ladderQueue = result.ladderQueue;
       } else {
-        queue = advanceQueue(queue, played, queuePhase);
-        queuePhase = queuePhase === "append" ? "interleave" : "append";
+        queue = advanceQueue(queue, played);
       }
-      const courtTier = s.skillSeparation ? (s.courtTiers?.[courtIndex] ?? null) : null;
-      const courts = [...s.courts];
-      courts[courtIndex] = null;
 
-      if (courtTier) {
-        // Tier-assigned court: generate next match immediately from that tier.
-        // Pass s.players so cross-tier locked partners are visible to pickNextFour.
-        const activeCourtsNow = activeCourtMatches(courts);
-        const tierQueue = courtTier === "casual" ? queue : (compQueue ?? []);
-        const nextMatch = generateMatch(tierQueue, s.players, history, activeCourtsNow, [], s.skillBased === true, s.lockedPairs ?? []);
-        if (nextMatch) courts[courtIndex] = nextMatch;
-      } else if (s.upcoming.length > 0) {
-        courts[courtIndex] = s.upcoming[0];
-      }
+      const genResult = generateForCourt(
+        buildGenerateForCourtContext(s, courtIndex, activeCourtMatches(courts), {
+          queue, competitiveQueue: compQueue, winnerQueue, loserQueue, ladderPending, ladderQueue,
+          history, casualMatchCount, competitiveMatchCount,
+        })
+      );
+      if (genResult.match) courts[courtIndex] = genResult.match;
+      if (genResult.queue) queue = genResult.queue;
+      if (genResult.competitiveQueue) compQueue = genResult.competitiveQueue;
+      if (genResult.winnerQueue) winnerQueue = genResult.winnerQueue;
+      if (genResult.loserQueue) loserQueue = genResult.loserQueue;
+      if (genResult.ladderPending) ladderPending = genResult.ladderPending;
+      if (genResult.ladderQueue) ladderQueue = genResult.ladderQueue;
 
       return {
         ...s,
         history,
         queue,
-        queuePhase,
         competitiveQueue: compQueue,
-        competitiveQueuePhase: compQueuePhase,
         casualMatchCount,
         competitiveMatchCount,
+        winnerQueue,
+        loserQueue,
+        ladderPending,
+        ladderQueue,
         courts,
-        upcoming: fillQueue(queue, s.players, history, courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, casualMatchCount, competitiveMatchCount),
+        upcoming: fillQueue(buildFillQueueContext(s, courts, {
+          queue, competitiveQueue: compQueue, winnerQueue, loserQueue, history, casualMatchCount, competitiveMatchCount,
+        })),
       };
     });
     const label = winner === "tie" ? "Tie game" : winner === "A" ? "Team A wins" : "Team B wins";
@@ -192,23 +216,48 @@ export default function SessionPage({
     }
   };
 
+  const handleResetSession = async () => {
+    const ok = await confirm(
+      "This clears all courts, the upcoming queue, and match history. Players and settings (matching style, court count, locked partners) are kept. This cannot be undone.",
+      { title: "Reset session?", confirmLabel: "Reset" }
+    );
+    if (!ok) return;
+    setState((s) => ({ ...s, ...resetSession(s) }));
+    notify(`Session ${normalized} reset`, "success");
+  };
+
   const addPlayer = (name: string, skill: SkillLevel) => {
     const player: Player = { id: crypto.randomUUID(), name, skill, active: true, joinedAt: Date.now() };
     setState((s) => {
       const players = [...s.players, player];
+      const style = s.matchingStyle ?? "auto-balanced";
       let queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
       let compQueue = s.competitiveQueue;
-      if (s.skillSeparation && skillTier(skill) === "competitive") {
-        compQueue = [...(compQueue ?? []), player.id];
+      let winnerQueue = s.winnerQueue;
+      let ladderQueue = s.ladderQueue;
+
+      // New players have 0 games — put them at the front of whichever queue
+      // their style uses, so they're prioritized over players who've already
+      // had several, rather than appended to the back where they'd be
+      // perpetually skipped by the rotation.
+      if (style === "skill-courts" && skillTier(skill) === "competitive") {
+        compQueue = [player.id, ...(compQueue ?? [])];
+      } else if (style === "winner-loser-groups") {
+        winnerQueue = [player.id, ...(winnerQueue ?? [])];
+      } else if (style === "king-of-court") {
+        ladderQueue = [player.id, ...(ladderQueue ?? [])];
       } else {
-        queue = [...queue, player.id];
+        queue = [player.id, ...queue];
       }
+
       return {
         ...s,
         players,
         queue,
         competitiveQueue: compQueue,
-        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        winnerQueue,
+        ladderQueue,
+        upcoming: fillQueue(buildFillQueueContext(s, s.courts, { queue, competitiveQueue: compQueue, winnerQueue })),
       };
     });
   };
@@ -219,9 +268,13 @@ export default function SessionPage({
       const players = s.players.map((p) =>
         p.id === id ? { ...p, active: p.active === false } : p
       );
+      const style = s.matchingStyle ?? "auto-balanced";
       const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
-      const lockedPairs = s.lockedPairs ?? [];
+      const compQueue = style === "skill-courts" ? (s.competitiveQueue ?? []) : undefined;
+      const winnerQueue = s.winnerQueue ?? [];
+      const loserQueue = s.loserQueue ?? [];
+      const ladderQueue = s.ladderQueue ?? [];
+      const lockedPairsNow = s.lockedPairs ?? [];
 
       if (goingInactive) {
         const courtIdx = s.courts.findIndex(
@@ -230,7 +283,7 @@ export default function SessionPage({
 
         if (courtIdx !== -1) {
           const lockedMap = new Map<string, string>();
-          for (const [a, b] of lockedPairs) {
+          for (const [a, b] of lockedPairsNow) {
             lockedMap.set(a, b);
             lockedMap.set(b, a);
           }
@@ -243,10 +296,20 @@ export default function SessionPage({
           });
 
           const inactivePlayer = s.players.find((p) => p.id === id);
-          const inactiveTier = inactivePlayer && s.skillSeparation
+          const inactiveTier = inactivePlayer && style === "skill-courts"
             ? skillTier(inactivePlayer.skill)
             : null;
-          const subQueue = inactiveTier === "competitive" && compQueue ? compQueue : queue;
+
+          let subQueue: string[];
+          if (style === "skill-courts") {
+            subQueue = inactiveTier === "competitive" ? (compQueue ?? []) : queue;
+          } else if (style === "winner-loser-groups") {
+            subQueue = [...winnerQueue, ...loserQueue];
+          } else if (style === "king-of-court") {
+            subQueue = ladderQueue;
+          } else {
+            subQueue = queue;
+          }
 
           const substitute = subQueue.find((qid) => {
             if (qid === id) return false;
@@ -270,7 +333,7 @@ export default function SessionPage({
               ...s,
               players,
               courts,
-              upcoming: fillQueue(queue, players, s.history, courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+              upcoming: fillQueue(buildFillQueueContext(s, courts, { queue, competitiveQueue: compQueue, winnerQueue, loserQueue })),
             };
           }
         }
@@ -279,7 +342,7 @@ export default function SessionPage({
       return {
         ...s,
         players,
-        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        upcoming: fillQueue(buildFillQueueContext(s, s.courts, { queue, competitiveQueue: compQueue, winnerQueue, loserQueue })),
       };
     });
   };
@@ -287,19 +350,27 @@ export default function SessionPage({
   const removePlayer = (id: string) => {
     setState((s) => {
       const players = s.players.filter((p) => p.id !== id);
-      const lockedPairs = (s.lockedPairs ?? []).filter(([a, b]) => a !== id && b !== id);
+      const lockedPairsNext = (s.lockedPairs ?? []).filter(([a, b]) => a !== id && b !== id);
       const queue = (s.queue?.length ? s.queue : s.players.map((p) => p.id)).filter((qid) => qid !== id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []).filter((qid) => qid !== id) : undefined;
+      const compQueue = s.competitiveQueue?.filter((qid) => qid !== id);
+      const winnerQueue = s.winnerQueue?.filter((qid) => qid !== id);
+      const loserQueue = s.loserQueue?.filter((qid) => qid !== id);
+      const ladderQueue = s.ladderQueue?.filter((qid) => qid !== id);
+      const ladderPending = s.ladderPending ? removeFromLadder(s.ladderPending, id) : undefined;
       const matchHasPlayer = (m: PendingMatch) => [...m.teamA, ...m.teamB].includes(id);
       const courts = s.courts.map((m) => (m && matchHasPlayer(m) ? null : m));
       return {
         ...s,
         players,
-        lockedPairs,
+        lockedPairs: lockedPairsNext,
         queue,
         competitiveQueue: compQueue,
+        winnerQueue,
+        loserQueue,
+        ladderQueue,
+        ladderPending,
         courts,
-        upcoming: fillQueue(queue, players, s.history, courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        upcoming: fillQueue(buildFillQueueContext(s, courts, { queue, competitiveQueue: compQueue, winnerQueue, loserQueue })),
       };
     });
   };
@@ -308,8 +379,6 @@ export default function SessionPage({
     setState((s) => {
       const desired = Math.max(1, Math.min(MAX_COURTS, n));
       const courts = resizeCourts(s.courts, desired);
-      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
       const existingTiers = s.courtTiers ?? [];
       const courtTiers = Array.from({ length: desired }, (_, i) => existingTiers[i] ?? null);
       const allNull = courtTiers.every((t) => t === null);
@@ -318,7 +387,7 @@ export default function SessionPage({
         courtCount: desired,
         courts,
         courtTiers: allNull ? undefined : courtTiers,
-        upcoming: fillQueue(queue, s.players, s.history, courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        upcoming: fillQueue(buildFillQueueContext(s, courts)),
       };
     });
 
@@ -333,76 +402,23 @@ export default function SessionPage({
       };
     });
 
-  const setSkillSeparation = (next: boolean) =>
+  const setMatchingStyle = (next: MatchingStyle) =>
     setState((s) => {
-      const currentQueue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      if (next) {
-        // Split single queue into casual + competitive, preserving existing order within each tier
-        const queue = currentQueue.filter((id) => {
-          const p = s.players.find((pl) => pl.id === id);
-          return p ? skillTier(p.skill) === "casual" : true;
-        });
-        const compQueue = currentQueue.filter((id) => {
-          const p = s.players.find((pl) => pl.id === id);
-          return p ? skillTier(p.skill) === "competitive" : false;
-        });
-        return {
-          ...s,
-          skillSeparation: true,
-          queue,
-          queuePhase: "append",
-          competitiveQueue: compQueue,
-          competitiveQueuePhase: "append",
-          casualMatchCount: 0,
-          competitiveMatchCount: 0,
-          upcoming: fillQueue(queue, s.players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], compQueue, 0, 0),
-        };
-      } else {
-        // Merge queues by interleaving: casual[0], comp[0], casual[1], comp[1], …
-        const comp = s.competitiveQueue ?? [];
-        const merged: string[] = [];
-        const maxLen = Math.max(currentQueue.length, comp.length);
-        for (let i = 0; i < maxLen; i++) {
-          if (i < currentQueue.length) merged.push(currentQueue[i]);
-          if (i < comp.length) merged.push(comp[i]);
-        }
-        return {
-          ...s,
-          skillSeparation: false,
-          queue: merged,
-          queuePhase: "append",
-          competitiveQueue: undefined,
-          competitiveQueuePhase: undefined,
-          casualMatchCount: undefined,
-          competitiveMatchCount: undefined,
-          upcoming: fillQueue(merged, s.players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? []),
-        };
-      }
-    });
-
-  const setSkillBased = (next: boolean) =>
-    setState((s) => {
-      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
-      return {
-        ...s,
-        skillBased: next,
-        upcoming: fillQueue(queue, s.players, s.history, s.courts, next, s.lockedPairs ?? [], compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
-      };
+      if (next === "mixed-doubles") return s; // coming soon — not selectable
+      const merged = { ...s, ...transitionToStyle(s, next) };
+      return { ...merged, upcoming: fillQueue(buildFillQueueContext(merged, s.courts)) };
     });
 
   const setLockedPair = (playerId: string, partnerId: string | null) =>
     setState((s) => {
       const pairs = (s.lockedPairs ?? []).filter(([a, b]) => a !== playerId && b !== playerId);
-      const lockedPairs = partnerId
+      const nextLockedPairs = partnerId
         ? [...pairs.filter(([a, b]) => a !== partnerId && b !== partnerId), [playerId, partnerId] as [string, string]]
         : pairs;
-      const queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
-      const compQueue = s.skillSeparation ? (s.competitiveQueue ?? []) : undefined;
       return {
         ...s,
-        lockedPairs,
-        upcoming: fillQueue(queue, s.players, s.history, s.courts, s.skillBased === true, lockedPairs, compQueue, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        lockedPairs: nextLockedPairs,
+        upcoming: fillQueue({ ...buildFillQueueContext(s, s.courts), lockedPairs: nextLockedPairs }),
       };
     });
 
@@ -410,9 +426,10 @@ export default function SessionPage({
     setState((s) => {
       const oldPlayer = s.players.find((p) => p.id === id);
       const players = s.players.map((p) => p.id === id ? { ...p, skill } : p);
+      const style = s.matchingStyle ?? "auto-balanced";
       let queue = s.queue?.length ? s.queue : s.players.map((p) => p.id);
       let compQueue = s.competitiveQueue;
-      if (s.skillSeparation && oldPlayer) {
+      if (style === "skill-courts" && oldPlayer) {
         const oldTier = skillTier(oldPlayer.skill);
         const newTier = skillTier(skill);
         if (oldTier !== newTier) {
@@ -430,7 +447,7 @@ export default function SessionPage({
         players,
         queue,
         competitiveQueue: compQueue,
-        upcoming: fillQueue(queue, players, s.history, s.courts, s.skillBased === true, s.lockedPairs ?? [], s.skillSeparation ? compQueue : undefined, s.casualMatchCount ?? 0, s.competitiveMatchCount ?? 0),
+        upcoming: fillQueue(buildFillQueueContext(s, s.courts, { queue, competitiveQueue: compQueue })),
       };
     });
   };
@@ -505,11 +522,9 @@ export default function SessionPage({
             <CourtConfig
               courtCount={state.courtCount}
               readOnly={readOnly}
-              skillSeparation={skillSeparation}
-              skillBased={skillBased}
+              matchingStyle={matchingStyle}
               onChange={setCourtCount}
-              onToggleSkillSeparation={setSkillSeparation}
-              onToggleSkillBased={setSkillBased}
+              onSelectStyle={setMatchingStyle}
             />
           </div>
 
@@ -541,9 +556,8 @@ export default function SessionPage({
               </div>
             )}
             {state.courts.map((match, i) => {
-              const cTier = skillSeparation && state.courtCount > 1
-                ? (state.courtTiers?.[i] ?? null)
-                : null;
+              const cTier = isSkillCourts ? (state.courtTiers?.[i] ?? null) : null;
+              const ladderRank = isKingOfCourt ? { rank: i + 1, total: state.courtCount } : undefined;
               const canGen = !match && (
                 cTier === "casual"
                   ? activePlayers.filter((p) => skillTier(p.skill) === "casual").length >= 4
@@ -563,9 +577,10 @@ export default function SessionPage({
                   resultMode={resultMode}
                   onGenerate={() => handleGenerate(i)}
                   onDeclareWinner={(winner) => handleDeclareWinner(i, winner)}
-                  skillSeparation={skillSeparation && state.courtCount > 1}
+                  skillSeparation={isSkillCourts}
                   courtTier={cTier}
                   onSetTier={!readOnly ? (tier) => setCourtTier(i, tier) : undefined}
+                  ladderRank={ladderRank}
                 />
               );
             })}
@@ -578,6 +593,27 @@ export default function SessionPage({
 
           <Scoreboard players={state.players} history={state.history} />
         </div>
+
+        {!readOnly && (
+          <section className="rounded-xl border border-border bg-background/60 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Reset session
+              </p>
+              <p className="text-xs text-muted mt-0.5">
+                Clears courts, the upcoming queue, and match history. Keeps players and
+                settings (matching style, court count, locked partners).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetSession}
+              className="shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
+            >
+              Reset
+            </button>
+          </section>
+        )}
 
         {!readOnly && (
           <section className="rounded-xl border border-accent/40 bg-accent/5 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

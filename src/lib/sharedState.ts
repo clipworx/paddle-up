@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
-import { AppState, INITIAL_STATE, PendingMatch } from "./types";
+import { AppState, INITIAL_STATE, PendingMatch, deriveMatchingStyle } from "./types";
 
 type LegacyAppState = Partial<AppState> & {
   pending?: PendingMatch | null;
@@ -20,6 +20,7 @@ function normalizeState(raw: unknown): AppState {
   const desired = Math.max(1, merged.courtCount ?? 1);
   while (courts.length < desired) courts.push(null);
   merged.courts = courts.slice(0, desired);
+  merged.matchingStyle = deriveMatchingStyle(parsed);
   return merged;
 }
 

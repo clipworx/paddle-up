@@ -27,6 +27,33 @@ export function skillTier(level: SkillLevel): SkillTier {
   return CASUAL_LEVELS.has(level) ? "casual" : "competitive";
 }
 
+export type MatchingStyle =
+  | "auto-balanced"
+  | "skill-separated"
+  | "winner-loser-groups"
+  | "skill-courts"
+  | "king-of-court"
+  | "mixed-doubles"; // UI placeholder only — never actually settable
+
+export const MATCHING_STYLES: {
+  value: MatchingStyle;
+  label: string;
+  description: string;
+  comingSoon?: boolean;
+}[] = [
+  { value: "auto-balanced", label: "Auto-balanced", description: "Everyone shares one queue. Teams are balanced each round." },
+  { value: "skill-separated", label: "Skill-separated", description: "Keeps players within 2 skill levels and waits instead of forcing a wide-gap match." },
+  { value: "winner-loser-groups", label: "Winner/Loser Groups", description: "Winners play winners. Losers play losers." },
+  { value: "skill-courts", label: "Skill Courts", description: "Assign courts to skill groups, each with its own queue." },
+  { value: "king-of-court", label: "King/Queen of the Court", description: "Winners move toward the top court while losers move down." },
+  { value: "mixed-doubles", label: "Mixed Doubles", description: "Each game needs two men and two women.", comingSoon: true },
+];
+
+export type LadderPending = {
+  promote: Record<number, [string, string][]>;
+  relegate: Record<number, [string, string][]>;
+};
+
 export type Player = {
   id: string;
   name: string;
@@ -69,9 +96,7 @@ export type AppState = {
   upcoming: PendingMatch[];
   history: CompletedMatch[];
   queue: string[];
-  queuePhase?: "append" | "interleave";
   competitiveQueue?: string[];
-  competitiveQueuePhase?: "append" | "interleave";
   casualMatchCount?: number;
   competitiveMatchCount?: number;
   courtTiers?: (SkillTier | null)[];
@@ -79,7 +104,23 @@ export type AppState = {
   skillBased?: boolean;
   lockedPairs?: [string, string][];
   resultMode?: ResultMode;
+  matchingStyle?: MatchingStyle;
+  winnerQueue?: string[];
+  loserQueue?: string[];
+  ladderPending?: LadderPending;
+  ladderQueue?: string[];
 };
+
+// Derives the matching style for sessions saved before the unified style
+// picker existed. Old skillSeparation:true sessions degrade to
+// auto-balanced (not remapped to skill-separated or skill-courts) since
+// both would silently change a live host's gameplay rules to something
+// they never picked — the host re-selects a style from the new picker.
+export function deriveMatchingStyle(s: Partial<AppState>): MatchingStyle {
+  if (s.matchingStyle) return s.matchingStyle;
+  if ((s.courtTiers ?? []).some((t) => t !== null)) return "skill-courts";
+  return "auto-balanced";
+}
 
 export const MAX_COURTS = 4;
 
@@ -198,4 +239,5 @@ export const INITIAL_STATE: AppState = {
   history: [],
   queue: [],
   skillSeparation: false,
+  matchingStyle: "auto-balanced",
 };
