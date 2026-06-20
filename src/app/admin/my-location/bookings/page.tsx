@@ -859,6 +859,18 @@ export default function BookingsPage() {
                     <span className="text-sm text-foreground">{selectedBooking.refund_reason ?? "—"}</span>
                   </div>
                 )}
+                {selectedBooking.receipt_url && (
+                  <div className="border-t border-border pt-3 space-y-2">
+                    <span className="text-xs text-muted font-semibold uppercase tracking-wide">Payment receipt</span>
+                    <a href={selectedBooking.receipt_url} target="_blank" rel="noopener noreferrer" className="block">
+                      <img
+                        src={selectedBooking.receipt_url}
+                        alt="Payment receipt"
+                        className="w-full max-h-72 object-contain rounded-xl border border-border hover:opacity-90 transition-opacity"
+                      />
+                    </a>
+                  </div>
+                )}
               </div>
               {selectedBooking.status !== "cancelled" && selectedBooking.status !== "refunded" && (
                 <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">

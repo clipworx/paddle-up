@@ -165,6 +165,18 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
               <Row label="Refund reason" value={booking.refund_reason ?? "No reason provided"} />
             </div>
           )}
+          {booking.receipt_url && (
+            <div className="border-t border-border pt-3 space-y-2">
+              <span className="text-xs text-muted font-semibold uppercase tracking-wide">Payment receipt</span>
+              <a href={booking.receipt_url} target="_blank" rel="noopener noreferrer" className="block">
+                <img
+                  src={booking.receipt_url}
+                  alt="Payment receipt"
+                  className="w-full max-h-72 object-contain rounded-xl border border-border hover:opacity-90 transition-opacity"
+                />
+              </a>
+            </div>
+          )}
           <div className="border-t border-border pt-3 space-y-3">
             <Row label="Booking ID" value={booking.id} mono />
             <Row label="Created" value={fmtDatetime(booking.created_at)} />

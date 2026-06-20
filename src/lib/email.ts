@@ -22,6 +22,7 @@ export type BookingEmailData = {
   notes: string | null;
   status: "confirmed" | "pending_payment";
   bookingId: string;
+  receiptUrl?: string;
 };
 
 function formatTime(t: string): string {
@@ -189,7 +190,11 @@ export async function sendBookingConfirmation(
     <div style="margin-top:20px;padding:14px 16px;background:#fefce8;border:1px solid #fde047;border-radius:8px;">
       <p style="margin:0;font-size:13px;color:#713f12;font-weight:600;">Payment required</p>
       <p style="margin:6px 0 0;font-size:13px;color:#854d0e;">Please follow the payment instructions provided at checkout. Your slot is reserved while payment is pending.</p>
-    </div>` : ""}`;
+    </div>
+    ${data.receiptUrl ? `
+    <div style="margin-top:16px;text-align:center;">
+      <a href="${data.receiptUrl}" style="display:inline-block;background:#14171a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Upload payment receipt</a>
+    </div>` : ""}` : ""}`;
 
   const subject = isPending
     ? `Booking request received — ${data.courtName} on ${formatDate(data.date)}`
@@ -206,6 +211,60 @@ export async function sendBookingConfirmation(
     from: `"${BRAND}" <${process.env.GMAIL_USER}>`,
     to: data.bookerEmail,
     subject,
+    html,
+  });
+}
+
+// ── Receipt uploaded (admin notification) ─────────────────────────────────────
+
+export type ReceiptUploadedEmailData = {
+  locationName: string;
+  courtName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  bookerName: string;
+  receiptUrl: string;
+};
+
+export async function sendReceiptUploadedNotification(
+  toEmail: string,
+  data: ReceiptUploadedEmailData
+): Promise<void> {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) return;
+
+  const body = `
+    <p style="margin:0 0 20px;font-size:14px;color:#52525b;">
+      <strong>${data.bookerName}</strong> uploaded a payment receipt for their booking at <strong>${data.locationName}</strong>.
+      Please review it and confirm the booking once verified.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e4e7;border-radius:8px;overflow:hidden;font-size:14px;margin-bottom:20px;">
+      <tr style="background:#f4f4f5;">
+        <td style="padding:10px 16px;color:#71717a;font-weight:600;width:36%;">Space</td>
+        <td style="padding:10px 16px;color:#18181b;">${data.courtName}</td>
+      </tr>
+      <tr style="border-top:1px solid #e4e4e7;">
+        <td style="padding:10px 16px;color:#71717a;font-weight:600;">Date</td>
+        <td style="padding:10px 16px;color:#18181b;">${formatDate(data.date)}</td>
+      </tr>
+      <tr style="border-top:1px solid #e4e4e7;background:#fafafa;">
+        <td style="padding:10px 16px;color:#71717a;font-weight:600;">Time</td>
+        <td style="padding:10px 16px;color:#18181b;">${formatTime(data.startTime)} – ${formatTime(data.endTime)}</td>
+      </tr>
+    </table>
+    <a href="${data.receiptUrl}" style="display:inline-block;background:#14171a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">View receipt</a>`;
+
+  const html = emailWrapper(
+    "Payment receipt uploaded",
+    body,
+    `This is an automated notification from ${BRAND}. Do not reply to this email.`
+  );
+
+  const transporter = getTransporter();
+  await transporter.sendMail({
+    from: `"${BRAND}" <${process.env.GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Receipt uploaded — ${data.courtName} on ${formatDate(data.date)}`,
     html,
   });
 }

@@ -196,6 +196,7 @@ export async function POST(req: Request) {
   }
 
   // Fire-and-forget: send confirmation to booker + notify location admin
+  const origin = new URL(req.url).origin;
   const emailData = {
     locationName: loc?.name ?? "",
     courtName: courtRow?.name ?? "",
@@ -208,6 +209,7 @@ export async function POST(req: Request) {
     notes,
     status: status as "confirmed" | "pending_payment",
     bookingId: data.id,
+    receiptUrl: requiresPayment ? `${origin}/book/receipt/${data.id}` : undefined,
   };
 
   Promise.resolve(sendBookingConfirmation(emailData)).catch(() => {});

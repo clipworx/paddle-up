@@ -127,7 +127,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from("bookings")
-    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, refund_reason, created_at, courts(name, locations(name))", { count: "exact" })
+    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, refund_reason, receipt_url, receipt_uploaded_at, created_at, courts(name, locations(name))", { count: "exact" })
     .order("date", { ascending: false })
     .order("start_time", { ascending: false })
     .range(offset, offset + limit - 1);

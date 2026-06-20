@@ -34,6 +34,7 @@ type ConfirmedBooking = {
   rangeLabel: string;
   totalPrice: number;
   booker_name: string;
+  bookerEmail: string;
   requiresPayment: boolean;
   paymentQrUrl: string | null;
   paymentAccountName: string | null;
@@ -41,6 +42,7 @@ type ConfirmedBooking = {
   bookingId: string;
   requiresDownpayment: boolean;
   downpaymentAmount: number;
+  receiptDeferred?: boolean;
 };
 
 type PublicAnnouncement = {
@@ -670,6 +672,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       rangeLabel: slotRangeLabel(slots, form.startIdx, form.endIdx),
       totalPrice,
       booker_name: form.booker_name,
+      bookerEmail: form.booker_email,
       requiresPayment: json.requires_payment ?? false,
       paymentQrUrl: json.payment_qr_url ?? null,
       paymentAccountName: json.payment_account_name ?? null,
@@ -800,7 +803,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       <main className="mx-auto max-w-6xl w-full px-4 py-8 space-y-6">
 
       {/* Payment pending screen */}
-      {confirmed?.requiresPayment && (
+      {confirmed?.requiresPayment && !confirmed.receiptDeferred && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
           <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-2xl overflow-hidden">
             <div className="px-6 pt-6 pb-4 border-b border-border">
@@ -857,14 +860,59 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               )}
 
               <p className="text-xs text-muted text-center">
-                Show your payment screenshot to staff on the day of your booking.
+                After paying, upload your receipt so the venue can confirm your booking.
               </p>
 
+              <Link
+                href={`/book/receipt/${confirmed.bookingId}`}
+                className="block w-full text-center rounded-xl bg-accent text-background py-3 text-sm font-semibold hover:bg-muted transition-colors shadow-sm"
+              >
+                Upload payment receipt
+              </Link>
+
+              <button
+                onClick={() => setConfirmed((c) => c && ({ ...c, receiptDeferred: true }))}
+                className="w-full rounded-xl border border-border text-foreground py-3 text-sm font-semibold hover:bg-surface transition-colors"
+              >
+                I&apos;ll do this later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt-upload deferred modal */}
+      {confirmed?.requiresPayment && confirmed.receiptDeferred && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => setConfirmed(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 pt-6 pb-4 border-b border-border">
+              <div className="inline-block rounded-full bg-accent/15 text-accent px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest mb-2">
+                Link sent
+              </div>
+              <h2 className="text-lg font-bold text-foreground">We&apos;ve emailed you the link</h2>
+              <p className="text-xs text-muted mt-1">
+                Upload your payment receipt anytime using the link sent to <strong className="text-foreground">{confirmed.bookerEmail}</strong>.
+              </p>
+            </div>
+
+            <div className="px-6 py-4 space-y-3">
+              <Link
+                href={`/book/receipt/${confirmed.bookingId}`}
+                className="block w-full text-center rounded-xl bg-accent text-background py-3 text-sm font-semibold hover:bg-muted transition-colors shadow-sm"
+              >
+                Upload payment receipt now
+              </Link>
               <button
                 onClick={() => setConfirmed(null)}
-                className="w-full rounded-xl bg-accent text-background py-3 text-sm font-semibold hover:bg-muted transition-colors shadow-sm"
+                className="w-full rounded-xl border border-border text-foreground py-3 text-sm font-semibold hover:bg-surface transition-colors"
               >
-                Done
+                Close
               </button>
             </div>
           </div>

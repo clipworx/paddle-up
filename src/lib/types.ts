@@ -192,6 +192,8 @@ export type Booking = {
   notes: string | null;
   status: BookingStatus;
   refund_reason: string | null;
+  receipt_url: string | null;
+  receipt_uploaded_at: string | null;
   created_at: string;
 };
 
