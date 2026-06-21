@@ -30,6 +30,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  // Blocked-slot check
+  const { data: blockHits } = await supabase
+    .from("court_blocks")
+    .select("id")
+    .eq("court_id", court_id)
+    .eq("date", date)
+    .lt("start_time", end_time)
+    .gt("end_time", start_time)
+    .limit(1);
+
+  if (blockHits && blockHits.length > 0)
+    return NextResponse.json({ error: "slot_blocked" }, { status: 409 });
+
   // Conflict check
   const { data: conflicts } = await supabase
     .from("bookings")

@@ -197,6 +197,16 @@ export type Booking = {
   created_at: string;
 };
 
+export type CourtBlock = {
+  id: string;
+  court_id: string;
+  date: string;       // YYYY-MM-DD
+  start_time: string; // HH:MM:SS
+  end_time: string;   // HH:MM:SS
+  reason: string | null;
+  created_at: string;
+};
+
 export type TimeSlot = {
   start: string; // "07:00"
   end: string;   // "08:00"

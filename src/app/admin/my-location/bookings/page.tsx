@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, LayoutGrid, List, Plus, RefreshCw, X } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, LayoutGrid, List, Plus, RefreshCw, X } from "lucide-react";
 import { useLocationAdminContext } from "@/contexts/LocationAdminContext";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
-import type { Court, Booking, BookingStatus } from "@/lib/types";
+import type { Court, Booking, BookingStatus, CourtBlock } from "@/lib/types";
 import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
 import { formatDate, fmtTime, displayDate, ALL_HOURS_24, CLOSE_HOURS } from "@/lib/admin-utils";
 
@@ -48,6 +48,7 @@ export default function BookingsPage() {
   const [courts, setCourts]     = useState<Court[] | null>(null);
   const [courtPage, setCourtPage] = useState(0);
   const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [blocks, setBlocks]     = useState<CourtBlock[] | null>(null);
   const [nowTop, setNowTop]     = useState<number | null>(null);
 
   const [cancellingId, setCancellingId]   = useState<string | null>(null);
@@ -73,6 +74,16 @@ export default function BookingsPage() {
   const [listSearch, setListSearch]             = useState("");
   const [listStatusFilter, setListStatusFilter] = useState<BookingStatus | "all">("all");
   const [listPage, setListPage]                 = useState(0);
+
+  const [blockForm, setBlockForm] = useState<{
+    court_ids: string[]; all_courts: boolean;
+    start_date: string; end_date: string; start_hour: number; end_hour: number; reason: string;
+  } | null>(null);
+  const [blockSubmitting, setBlockSubmitting] = useState(false);
+  const [blockError, setBlockError]           = useState<string | null>(null);
+  const [blockConflicts, setBlockConflicts]   = useState<{ court_name: string; date: string; start_time: string; end_time: string; booker_name: string }[] | null>(null);
+  const [removeBlockTarget, setRemoveBlockTarget] = useState<CourtBlock | null>(null);
+  const [removingBlock, setRemovingBlock]         = useState(false);
 
   const tbodyRef       = useRef<HTMLTableSectionElement>(null);
   const refundReasonRef = useRef<HTMLTextAreaElement>(null);
@@ -103,7 +114,14 @@ export default function BookingsPage() {
     setBookings(json.bookings ?? []);
   }, []);
 
-  useEffect(() => { loadBookings(date); }, [date, loadBookings]);
+  const loadBlocks = useCallback(async (d: string) => {
+    const res = await fetch(`/api/court-blocks?date=${d}`);
+    if (!res.ok) return;
+    const json = await res.json();
+    setBlocks(json.blocks ?? []);
+  }, []);
+
+  useEffect(() => { loadBookings(date); loadBlocks(date); }, [date, loadBookings, loadBlocks]);
 
   // Keep detail modal in sync after reload
   useEffect(() => {
@@ -148,6 +166,28 @@ export default function BookingsPage() {
       );
     });
     bookingSpanMap.set(court.id, slotMap);
+  });
+
+  // Blocked slots — only surfaced where no real booking already occupies the cell.
+  type BlockSpan = { block: CourtBlock; rowSpan: number; isStart: boolean };
+  const blockSpanMap = new Map<string, Map<number, BlockSpan>>();
+  (courts ?? []).forEach((court) => {
+    const slotMap = new Map<number, BlockSpan>();
+    (blocks ?? []).forEach((blk) => {
+      if (blk.court_id !== court.id) return;
+      const blkStart = blk.start_time.slice(0, 5);
+      const blkEnd   = normEnd(blk.end_time.slice(0, 5));
+      const covered = visibleSlotIndices.filter((idx) => {
+        if (bookingSpanMap.get(court.id)?.has(idx)) return false;
+        const s = slots[idx];
+        return s.start < blkEnd && normEnd(s.end) > blkStart;
+      });
+      if (!covered.length) return;
+      covered.forEach((idx, i) =>
+        slotMap.set(idx, { block: blk, rowSpan: covered.length, isStart: i === 0 })
+      );
+    });
+    blockSpanMap.set(court.id, slotMap);
   });
 
   // ── Now indicator ─────────────────────────────────────────────────────────
@@ -213,6 +253,29 @@ export default function BookingsPage() {
       booker_name: "", booker_phone: "", booker_email: "", notes: "",
     });
     setAdminBookingError(null);
+  }
+
+  function openBlockModal() {
+    setBlockForm({
+      court_ids: [], all_courts: true,
+      start_date: date, end_date: date,
+      start_hour: location?.open_hour ?? 7, end_hour: (location?.open_hour ?? 7) + 1,
+      reason: "",
+    });
+    setBlockError(null);
+    setBlockConflicts(null);
+  }
+
+  async function onRemoveBlock() {
+    if (!removeBlockTarget) return;
+    setRemovingBlock(true);
+    try {
+      const res = await fetch(`/api/admin/court-blocks/${encodeURIComponent(removeBlockTarget.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove block");
+      setRemoveBlockTarget(null);
+      loadBlocks(date);
+    } catch (err) { alert((err as Error).message); }
+    finally { setRemovingBlock(false); }
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────
@@ -378,6 +441,14 @@ export default function BookingsPage() {
             className="rounded-lg bg-accent text-background px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 shrink-0 shadow-sm flex items-center gap-1.5"
           >
             <Plus size={14} /> New booking
+          </button>
+
+          <button
+            onClick={openBlockModal}
+            disabled={!courts || courts.length === 0}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface transition-colors disabled:opacity-40 shrink-0 flex items-center gap-1.5"
+          >
+            <Ban size={14} /> Block time
           </button>
 
           <div className="flex-1" />
@@ -624,14 +695,17 @@ export default function BookingsPage() {
                         {/* Court cells */}
                         {visibleCourts.map((court) => {
                           const slotInfo = bookingSpanMap.get(court.id)?.get(absIdx);
-                          if (slotInfo && !slotInfo.isStart) return null;
+                          const blockInfo = blockSpanMap.get(court.id)?.get(absIdx);
+                          if ((slotInfo && !slotInfo.isStart) || (blockInfo && !blockInfo.isStart)) return null;
 
                           const booking  = slotInfo?.booking ?? null;
                           const isPending = booking?.status === "pending_payment";
                           const booked   = !!booking;
+                          const block    = blockInfo?.block ?? null;
+                          const blocked  = !!block;
                           const past     = isSlotPast(absIdx);
-                          const available = !booked && !past && court.is_active;
-                          const rowSpan  = slotInfo?.rowSpan ?? 1;
+                          const available = !booked && !blocked && !past && court.is_active;
+                          const rowSpan  = slotInfo?.rowSpan ?? blockInfo?.rowSpan ?? 1;
 
                           return (
                             <td
@@ -639,11 +713,15 @@ export default function BookingsPage() {
                               rowSpan={rowSpan}
                               onClick={() => {
                                 if (booked && booking) { setSelectedBooking(booking); }
+                                else if (blocked && block) { setRemoveBlockTarget(block); }
                                 else if (available) { openNewBooking(court.id, absIdx); }
                               }}
+                              style={blocked ? { backgroundImage: "repeating-linear-gradient(45deg, var(--color-border) 0, var(--color-border) 1px, transparent 1px, transparent 8px)" } : undefined}
                               className={`px-2 py-2 align-middle transition-colors ${visibleCourts.length > 1 ? "border-l border-border" : ""} ${
                                 booked
                                   ? "cursor-pointer " + (isPending ? "bg-amber-50/80 hover:bg-amber-100/60" : "bg-accent/12 hover:bg-accent/20")
+                                  : blocked
+                                  ? "cursor-pointer bg-surface hover:bg-border/20"
                                   : available
                                   ? "cursor-pointer hover:bg-accent/8 group/cell"
                                   : "opacity-25 bg-surface"
@@ -652,6 +730,8 @@ export default function BookingsPage() {
                               <div className={`w-full rounded-lg flex flex-col items-center justify-center text-xs font-semibold select-none ${rowSpan === 1 ? "py-3" : "py-2.5 gap-0.5"} ${
                                 booked
                                   ? isPending ? "text-amber-700" : "text-accent/80"
+                                  : blocked
+                                  ? "text-muted"
                                   : available
                                   ? "text-accent/0 group-hover/cell:text-accent/50 transition-colors"
                                   : "text-muted"
@@ -664,6 +744,13 @@ export default function BookingsPage() {
                                     )}
                                     {isPending && rowSpan > 1 && (
                                       <span className="mt-0.5 rounded-full bg-amber-100 text-amber-700 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider">Pending</span>
+                                    )}
+                                  </>
+                                ) : blocked && block ? (
+                                  <>
+                                    <span className="font-bold leading-tight text-center">Blocked</span>
+                                    {rowSpan > 1 && block.reason && (
+                                      <span className="text-[10px] font-normal opacity-75 text-center line-clamp-1">{block.reason}</span>
                                     )}
                                   </>
                                 ) : available ? (
@@ -695,6 +782,10 @@ export default function BookingsPage() {
               <span className="flex items-center gap-1.5 text-xs text-muted">
                 <span className="w-3 h-3 rounded-sm bg-amber-100 shrink-0" />
                 Pending payment
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <span className="w-3 h-3 rounded-sm bg-surface border border-border shrink-0" style={{ backgroundImage: "repeating-linear-gradient(45deg, var(--color-border) 0, var(--color-border) 1px, transparent 1px, transparent 4px)" }} />
+                Blocked
               </span>
             </div>
           </>
@@ -816,6 +907,202 @@ export default function BookingsPage() {
                   {adminBookingSubmitting ? "Saving…" : "Confirm booking"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Block time modal ── */}
+      {blockForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-0 sm:px-4 py-0 sm:py-6"
+          onClick={() => setBlockForm(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-xl overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[17px] font-bold text-foreground">Block off time</h3>
+                <button onClick={() => setBlockForm(null)} className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted hover:bg-surface">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Courts</label>
+                  <label className="flex items-center gap-2 mb-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={blockForm.all_courts}
+                      onChange={(e) => setBlockForm((f) => f && ({ ...f, all_courts: e.target.checked }))}
+                      className="rounded border-border"
+                    />
+                    All courts
+                  </label>
+                  {!blockForm.all_courts && (
+                    <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto rounded-xl border border-border p-3">
+                      {(courts ?? []).map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={blockForm.court_ids.includes(c.id)}
+                            onChange={(e) => setBlockForm((f) => f && ({
+                              ...f,
+                              court_ids: e.target.checked ? [...f.court_ids, c.id] : f.court_ids.filter((id) => id !== c.id),
+                            }))}
+                            className="rounded border-border"
+                          />
+                          {c.name}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Start date</label>
+                    <input type="date" value={blockForm.start_date}
+                      onChange={(e) => setBlockForm((f) => f && ({ ...f, start_date: e.target.value, end_date: f.end_date < e.target.value ? e.target.value : f.end_date }))}
+                      className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">End date</label>
+                    <input type="date" value={blockForm.end_date} min={blockForm.start_date}
+                      onChange={(e) => setBlockForm((f) => f && ({ ...f, end_date: e.target.value }))}
+                      className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent" />
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Start time</label>
+                    <select value={blockForm.start_hour}
+                      onChange={(e) => { const h = Number(e.target.value); setBlockForm((f) => f && ({ ...f, start_hour: h, end_hour: Math.max(f.end_hour, h + 1) })); }}
+                      className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
+                      {ALL_HOURS_24.map(({ h, label }) => <option key={h} value={h}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">End time</label>
+                    <select value={blockForm.end_hour} onChange={(e) => setBlockForm((f) => f && ({ ...f, end_hour: Number(e.target.value) }))}
+                      className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground focus:outline-none focus:border-accent">
+                      {CLOSE_HOURS.filter(({ value }) => value > blockForm.start_hour).map(({ value, label }) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-muted uppercase tracking-wide mb-1.5">Reason <span className="normal-case font-normal">(optional)</span></label>
+                  <input type="text" value={blockForm.reason} onChange={(e) => setBlockForm((f) => f && ({ ...f, reason: e.target.value }))} placeholder="e.g. Maintenance, private event…"
+                    className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent" />
+                </div>
+                {blockError && <p className="text-sm text-red-600">{blockError}</p>}
+              </div>
+              <div className="flex gap-2.5 pt-1">
+                <button onClick={() => setBlockForm(null)}
+                  className="rounded-full border border-border px-5 py-2.5 text-[14px] font-semibold text-foreground hover:bg-surface transition-colors">
+                  Cancel
+                </button>
+                <button
+                  disabled={blockSubmitting || (!blockForm.all_courts && blockForm.court_ids.length === 0)}
+                  onClick={async () => {
+                    setBlockSubmitting(true);
+                    setBlockError(null);
+                    try {
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      const res = await fetch("/api/admin/court-blocks", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({
+                          court_ids: blockForm.court_ids,
+                          all_courts: blockForm.all_courts,
+                          start_date: blockForm.start_date,
+                          end_date: blockForm.end_date,
+                          start_time: `${pad(blockForm.start_hour)}:00`,
+                          end_time: blockForm.end_hour === 24 ? "00:00" : `${pad(blockForm.end_hour)}:00`,
+                          reason: blockForm.reason || null,
+                        }),
+                      });
+                      const json = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        const msgs: Record<string, string> = {
+                          missing_fields: "Please fill in all required fields.",
+                          invalid_date: "Enter a valid date range.",
+                          invalid_range: "End date must be on or after the start date.",
+                          court_required: "Select at least one court.",
+                          range_too_long: "Date range is too long (max 90 days).",
+                        };
+                        throw new Error(msgs[json.error] ?? json.error ?? "Failed to create block.");
+                      }
+                      setBlockForm(null);
+                      loadBlocks(date);
+                      if (json.conflicts?.length > 0) setBlockConflicts(json.conflicts);
+                    } catch (err) {
+                      setBlockError((err as Error).message);
+                    } finally {
+                      setBlockSubmitting(false);
+                    }
+                  }}
+                  className="flex-1 rounded-full bg-accent text-white px-5 py-2.5 text-[14px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {blockSubmitting ? "Blocking…" : "Block time"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Block conflicts warning ── */}
+      {blockConflicts && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-0 sm:px-4"
+          onClick={() => setBlockConflicts(null)}>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-border px-5 py-4">
+              <h3 className="text-base font-bold text-foreground">Block created — heads up</h3>
+              <p className="text-xs text-muted mt-1">
+                {blockConflicts.length} existing booking{blockConflicts.length > 1 ? "s" : ""} fall inside this blocked window. They were not cancelled — review them manually.
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              {blockConflicts.map((c, i) => (
+                <div key={i} className="rounded-lg border border-border px-3 py-2">
+                  <p className="text-sm font-semibold text-foreground">{c.court_name} · {c.booker_name}</p>
+                  <p className="text-xs text-muted">{displayDate(c.date)} · {fmtTime(c.start_time)} – {fmtTime(c.end_time)}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 border-t border-border px-5 py-4">
+              <button onClick={() => setBlockConflicts(null)}
+                className="flex-1 rounded-lg bg-accent text-white px-3 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Remove block confirm ── */}
+      {removeBlockTarget && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm px-0 sm:px-4"
+          onClick={() => setRemoveBlockTarget(null)}>
+          <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-border px-5 py-4">
+              <h3 className="text-base font-bold text-foreground">Remove this block?</h3>
+              <p className="text-xs text-muted mt-1">
+                {fmtTime(removeBlockTarget.start_time)} – {fmtTime(removeBlockTarget.end_time)} on {displayDate(removeBlockTarget.date)}
+                {removeBlockTarget.reason ? ` · ${removeBlockTarget.reason}` : ""}
+              </p>
+            </div>
+            <div className="flex gap-2 border-t border-border px-5 py-4">
+              <button onClick={() => setRemoveBlockTarget(null)}
+                className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted hover:bg-accent/5 transition-colors">Cancel</button>
+              <button onClick={onRemoveBlock} disabled={removingBlock}
+                className="flex-1 rounded-lg bg-accent text-white px-3 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50">
+                {removingBlock ? "Removing…" : "Remove block"}
+              </button>
             </div>
           </div>
         </div>

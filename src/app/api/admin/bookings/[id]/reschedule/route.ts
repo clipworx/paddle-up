@@ -34,6 +34,18 @@ export async function PATCH(req: Request, { params }: Params) {
   if (booking.status !== "confirmed" && booking.status !== "pending_payment")
     return NextResponse.json({ error: "cannot_reschedule" }, { status: 409 });
 
+  const { data: blockHits } = await supabase
+    .from("court_blocks")
+    .select("id")
+    .eq("court_id", booking.court_id)
+    .eq("date", date)
+    .lt("start_time", end_time)
+    .gt("end_time", start_time)
+    .limit(1);
+
+  if (blockHits && blockHits.length > 0)
+    return NextResponse.json({ error: "slot_blocked" }, { status: 409 });
+
   const { data: conflicts } = await supabase
     .from("bookings")
     .select("id")

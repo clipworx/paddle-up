@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { MapPin, Megaphone, CalendarDays } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
-import type { Court, Booking, Location } from "@/lib/types";
+import type { Court, Booking, Location, CourtBlock } from "@/lib/types";
 import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
 import type { TimeSlot } from "@/lib/types";
 import { applyTheme, clearTheme, themeVarsStyle } from "@/lib/themes";
@@ -112,8 +112,21 @@ function isSlotBlockedByRelated(slots: TimeSlot[], courts: Court[], bookings: Bo
   return courts.some((c) => c.parent_court_id === court.id && isSlotBooked(slots, bookings, c.id, slotIdx));
 }
 
-function isSlotUnavailable(slots: TimeSlot[], courts: Court[], bookings: Booking[], court: Court, slotIdx: number): boolean {
-  return isSlotBooked(slots, bookings, court.id, slotIdx) || isSlotBlockedByRelated(slots, courts, bookings, court, slotIdx);
+function isSlotAdminBlocked(slots: TimeSlot[], blocks: CourtBlock[], courtId: string, slotIdx: number): boolean {
+  const slot = slots[slotIdx];
+  const slotEnd = normEnd(slot.end);
+  return blocks.some((blk) => {
+    if (blk.court_id !== courtId) return false;
+    const bStart = blk.start_time.slice(0, 5);
+    const bEnd = normEnd(blk.end_time.slice(0, 5));
+    return bStart < slotEnd && bEnd > slot.start;
+  });
+}
+
+function isSlotUnavailable(slots: TimeSlot[], courts: Court[], bookings: Booking[], blocks: CourtBlock[], court: Court, slotIdx: number): boolean {
+  return isSlotBooked(slots, bookings, court.id, slotIdx)
+    || isSlotBlockedByRelated(slots, courts, bookings, court, slotIdx)
+    || isSlotAdminBlocked(slots, blocks, court.id, slotIdx);
 }
 
 function isPast(slots: TimeSlot[], dateIso: string, slotIdx: number): boolean {
@@ -344,6 +357,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const [courts, setCourts] = useState<Court[]>([]);
   const [courtPage, setCourtPage] = useState(0);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [blocks, setBlocks] = useState<CourtBlock[]>([]);
   const [loadingCourts, setLoadingCourts] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -421,7 +435,15 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     setLoadingSlots(false);
   }, [selectedLocation]);
 
-  useEffect(() => { fetchBookings(date); }, [date, fetchBookings]);
+  const fetchBlocks = useCallback(async (d: string) => {
+    if (!selectedLocation) return;
+    const res = await fetch(`/api/court-blocks?date=${d}`);
+    if (!res.ok) return;
+    const json = await res.json();
+    setBlocks(json.blocks ?? []);
+  }, [selectedLocation]);
+
+  useEffect(() => { fetchBookings(date); fetchBlocks(date); }, [date, fetchBookings, fetchBlocks]);
 
   useEffect(() => {
     if (showModal) setTimeout(() => nameRef.current?.focus(), 50);
@@ -478,7 +500,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   function defaultStartIdx(courtId: string): number {
     const court = courts.find((c) => c.id === courtId);
     for (let i = openH * slotsPerHour; i < closeH * slotsPerHour; i++) {
-      if (!isPast(slots, date, i) && (!court || !isSlotUnavailable(slots, courts, bookings, court, i))) return i;
+      if (!isPast(slots, date, i) && (!court || !isSlotUnavailable(slots, courts, bookings, blocks, court, i))) return i;
     }
     return openH * slotsPerHour;
   }
@@ -490,12 +512,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     if (selectedLocation?.no_split_rate_booking && startIdx < nightHour * slotsPerHour) {
       const cap = nightHour * slotsPerHour - 1;
       for (let i = startIdx; i <= cap; i++) {
-        if (court && isSlotUnavailable(slots, courts, bookings, court, i)) return i - 1;
+        if (court && isSlotUnavailable(slots, courts, bookings, blocks, court, i)) return i - 1;
       }
       return cap;
     }
     for (let i = startIdx; i < closeH * slotsPerHour; i++) {
-      if (court && isSlotUnavailable(slots, courts, bookings, court, i)) return i - 1;
+      if (court && isSlotUnavailable(slots, courts, bookings, blocks, court, i)) return i - 1;
     }
     return closeH * slotsPerHour - 1;
   }
@@ -603,7 +625,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     const court = courts.find((c) => c.id === form.court_id);
     for (let i = form.startIdx; i <= form.endIdx; i++) {
       if (isPast(slots, date, i)) return `${slots[i].start} is in the past.`;
-      if (court && isSlotUnavailable(slots, courts, bookings, court, i)) return `${slots[i].start} is not available.`;
+      if (court && isSlotUnavailable(slots, courts, bookings, blocks, court, i)) return `${slots[i].start} is not available.`;
     }
     return null;
   }
@@ -748,7 +770,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const availableStarts = visibleSlotIndices.filter((i) => {
     if (isPast(slots, date, i)) return false;
     const court = courts.find((c) => c.id === form.court_id);
-    return !court || !isSlotUnavailable(slots, courts, bookings, court, i);
+    return !court || !isSlotUnavailable(slots, courts, bookings, blocks, court, i);
   });
 
   return (
@@ -1246,7 +1268,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                             const matchingBooking = slotInfo?.booking ?? null;
                             const isPending = matchingBooking?.status === "pending_payment";
                             const booked = !!matchingBooking;
-                            const blockedByRelated = !booked && isSlotBlockedByRelated(slots, courts, bookings, court, absIdx);
+                            const blockedByRelated = !booked && (isSlotBlockedByRelated(slots, courts, bookings, court, absIdx) || isSlotAdminBlocked(slots, blocks, court.id, absIdx));
                             const past = isPast(slots, date, absIdx);
                             const available = !booked && !blockedByRelated && !past && court.is_active;
                             const rowSpan = slotInfo?.rowSpan ?? 1;
@@ -1430,7 +1452,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                     {visibleSlotIndices.map((i) => {
                       const past = isPast(slots, date, i);
                       const court = courts.find((c) => c.id === form.court_id);
-                      const unavailable = !!court && isSlotUnavailable(slots, courts, bookings, court, i);
+                      const unavailable = !!court && isSlotUnavailable(slots, courts, bookings, blocks, court, i);
                       return (
                         <option key={i} value={i} disabled={past || unavailable}>
                           {fmtSlotTime(slots[i].start)}{past ? " (past)" : unavailable ? " (unavailable)" : ""}
