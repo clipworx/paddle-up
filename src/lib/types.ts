@@ -2,9 +2,14 @@ export type Tier = "novice" | "intermediate";
 
 export const TIERS: Tier[] = ["novice", "intermediate"];
 
+// pending = waiting for the host to admit/decline; admitted = full access;
+// declined = host rejected them (they can ask again, which resets to pending).
+export type PlayerStatus = "pending" | "admitted" | "declined";
+
 export type Player = {
   id: string;                    // client-generated, persisted in localStorage per session code
   name: string;
+  status: PlayerStatus;
   tier: Tier | null;              // null until first chosen
   joined: boolean;                // true = actively queued in `tier`; false = resting
   joinedQueueAt: number | null;   // ms epoch of last "Join" click — FIFO order key

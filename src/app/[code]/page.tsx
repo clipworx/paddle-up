@@ -6,14 +6,16 @@ import { useRouter } from "next/navigation";
 import { EditLock } from "@/components/EditLock";
 import { Logo } from "@/components/Logo";
 import { JoinGate } from "@/components/JoinGate";
+import { WaitingRoom } from "@/components/WaitingRoom";
+import { PendingRequests } from "@/components/PendingRequests";
 import { MyStatusCard } from "@/components/MyStatusCard";
 import { RosterList } from "@/components/RosterList";
 import { CourtCard } from "@/components/CourtCard";
 import { HostPanel } from "@/components/HostPanel";
 import { useNotifications } from "@/components/Notifications";
-import { useSharedState } from "@/lib/sharedState";
+import { useSharedState, getStoredPassword } from "@/lib/sharedState";
 import { getStoredIdentity, setStoredIdentity, generatePlayerId } from "@/lib/playerIdentity";
-import { applySetCourtCount, applyKickPlayer } from "@/lib/sessionTransitions";
+import { applySetCourtCount, applyKickPlayer, applyAdmit, applyDecline } from "@/lib/sessionTransitions";
 import { Tier, MAX_COURTS } from "@/lib/types";
 
 export default function SessionPage({
@@ -46,7 +48,7 @@ export default function SessionPage({
     fetch(`/api/sessions/${normalized}/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ playerId: stored.playerId, name: stored.name }),
+      body: JSON.stringify({ playerId: stored.playerId, name: stored.name, password: getStoredPassword(normalized) }),
     }).then(() => {
       if (!cancelled) setPlayerId(stored.playerId);
     });
@@ -63,7 +65,7 @@ export default function SessionPage({
     const res = await fetch(`/api/sessions/${normalized}/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ playerId: id, name }),
+      body: JSON.stringify({ playerId: id, name, password: getStoredPassword(normalized) }),
     });
     setJoining(false);
     if (res.ok) {
@@ -72,6 +74,31 @@ export default function SessionPage({
     } else {
       notify("Failed to join session", "error");
     }
+  };
+
+  const handleRetryJoin = async () => {
+    if (!playerId || !myPlayer) return;
+    setBusy(true);
+    await fetch(`/api/sessions/${normalized}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ playerId, name: myPlayer.name, password: getStoredPassword(normalized) }),
+    });
+    setBusy(false);
+  };
+
+  const handleAdmit = (id: string) => {
+    setState((s) => {
+      const result = applyAdmit(s, id);
+      return "error" in result ? s : result;
+    });
+  };
+
+  const handleDecline = (id: string) => {
+    setState((s) => {
+      const result = applyDecline(s, id);
+      return "error" in result ? s : result;
+    });
   };
 
   const handleRename = async (name: string) => {
@@ -195,6 +222,10 @@ export default function SessionPage({
     return <main className="mx-auto max-w-xl w-full px-4 py-16 text-center text-sm text-muted">Loading…</main>;
   }
 
+  if (myPlayer.status !== "admitted") {
+    return <WaitingRoom status={myPlayer.status} busy={busy} onRetry={handleRetryJoin} />;
+  }
+
   return (
     <>
       <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
@@ -232,14 +263,17 @@ export default function SessionPage({
               onLeaveQueue={handleLeaveQueue}
             />
             {isEditor && (
-              <HostPanel
-                courtCount={state.courtCount}
-                onSetCourtCount={handleSetCourtCount}
-                onEndSession={handleEndSession}
-              />
+              <>
+                <PendingRequests players={state.players} onAdmit={handleAdmit} onDecline={handleDecline} />
+                <HostPanel
+                  courtCount={state.courtCount}
+                  onSetCourtCount={handleSetCourtCount}
+                  onEndSession={handleEndSession}
+                />
+              </>
             )}
             <RosterList
-              players={state.players}
+              players={state.players.filter((p) => p.status === "admitted")}
               myId={playerId}
               isEditor={isEditor}
               onKick={isEditor ? handleKick : undefined}

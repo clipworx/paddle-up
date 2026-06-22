@@ -18,6 +18,17 @@ function normalizeState(raw: unknown): AppState {
 
 const PASSWORD_KEY_PREFIX = "paddle-up-edit-pw-v1:";
 
+// Lets a page check "am I holding the host password for this session" without
+// waiting on useSharedState's async verify — used so the host's own join
+// request can self-admit instead of landing in the waiting room.
+export function getStoredPassword(code: string): string | null {
+  try {
+    return localStorage.getItem(`${PASSWORD_KEY_PREFIX}${code}`);
+  } catch {
+    return null;
+  }
+}
+
 type Updater = AppState | ((prev: AppState) => AppState);
 
 export type SharedState = {
