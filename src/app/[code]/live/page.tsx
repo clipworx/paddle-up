@@ -3,15 +3,14 @@
 import { use } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
-import { UpcomingMatches } from "@/components/UpcomingMatches";
 import { useSharedState } from "@/lib/sharedState";
-import { PendingMatch, Player } from "@/lib/types";
+import { Match, Player } from "@/lib/types";
 
 const COURT_PALETTE = [
-  { card: "border-amber-300 bg-amber-50/60",  label: "text-amber-700",   serving: "bg-amber-100 border border-amber-300", team: "bg-amber-100/60 border border-amber-200" },
-  { card: "border-sky-300 bg-sky-50/60",      label: "text-sky-700",     serving: "bg-sky-100 border border-sky-300",     team: "bg-sky-100/60 border border-sky-200"   },
-  { card: "border-emerald-300 bg-emerald-50/60", label: "text-emerald-700", serving: "bg-emerald-100 border border-emerald-300", team: "bg-emerald-100/60 border border-emerald-200" },
-  { card: "border-violet-300 bg-violet-50/60", label: "text-violet-700",  serving: "bg-violet-100 border border-violet-300",  team: "bg-violet-100/60 border border-violet-200"  },
+  { card: "border-amber-300 bg-amber-50/60", label: "text-amber-700" },
+  { card: "border-sky-300 bg-sky-50/60", label: "text-sky-700" },
+  { card: "border-emerald-300 bg-emerald-50/60", label: "text-emerald-700" },
+  { card: "border-violet-300 bg-violet-50/60", label: "text-violet-700" },
 ];
 
 function nameOf(players: Player[], id: string): string {
@@ -22,83 +21,33 @@ function LiveCourtCard({
   courtNumber,
   match,
   players,
-  showScore,
 }: {
   courtNumber: number;
-  match: PendingMatch;
+  match: Match;
   players: Player[];
-  showScore: boolean;
 }) {
   const palette = COURT_PALETTE[(courtNumber - 1) % COURT_PALETTE.length];
-  const scoreA = match.liveScoreA ?? 0;
-  const scoreB = match.liveScoreB ?? 0;
-  const serving = showScore ? (match.serving ?? null) : null;
-  const serverNumber = match.serverNumber ?? 1;
-
-  if (!showScore) {
-    return (
-      <div className={`rounded-xl border shadow-sm overflow-hidden ${palette.card}`}>
-        <div className="px-5 py-3 border-b border-black/5">
-          <h2 className={`text-xs font-bold uppercase tracking-widest ${palette.label}`}>
-            Court {courtNumber}
-          </h2>
-        </div>
-        <div className="grid grid-cols-[1fr_auto_1fr] divide-x divide-black/5">
-          <div className="px-5 py-6 text-center">
-            <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-3">Team A</p>
-            <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamA[0])}</p>
-            <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamA[1])}</p>
-          </div>
-          <div className="flex items-center justify-center px-3 py-6">
-            <span className="text-xs font-bold text-muted uppercase tracking-widest">vs</span>
-          </div>
-          <div className="px-5 py-6 text-center">
-            <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-3">Team B</p>
-            <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamB[0])}</p>
-            <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamB[1])}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={`rounded-xl border shadow-sm overflow-hidden ${palette.card}`}>
-      {/* Card header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-black/5">
+      <div className="px-5 py-3 border-b border-black/5">
         <h2 className={`text-xs font-bold uppercase tracking-widest ${palette.label}`}>
           Court {courtNumber}
         </h2>
-        {serving && (
-          <span className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-2.5 py-1 ${palette.label} ${palette.serving}`}>
-            Team {serving} serving
-          </span>
-        )}
       </div>
-
-      {/* Teams */}
-      <div className="divide-y divide-black/5">
-        <div className={`flex items-center gap-4 px-5 py-4 transition-colors ${serving === "A" ? palette.team : ""}`}>
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-1">Team A</p>
-            <p className="text-base font-semibold text-foreground truncate">{nameOf(players, match.teamA[0])}</p>
-            <p className="text-base font-semibold text-foreground truncate">{nameOf(players, match.teamA[1])}</p>
-          </div>
-          <p className="text-5xl sm:text-6xl font-bold text-foreground tabular-nums shrink-0">{scoreA}</p>
+      <div className="grid grid-cols-[1fr_auto_1fr] divide-x divide-black/5">
+        <div className="px-5 py-6 text-center">
+          <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-3">Team A</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamA[0])}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamA[1])}</p>
         </div>
-
-        <div className="flex items-center gap-3 px-5 py-2">
+        <div className="flex items-center justify-center px-3 py-6">
           <span className="text-xs font-bold text-muted uppercase tracking-widest">vs</span>
-          <div className="flex-1 h-px bg-black/8" />
         </div>
-
-        <div className={`flex items-center gap-4 px-5 py-4 transition-colors ${serving === "B" ? palette.team : ""}`}>
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-1">Team B</p>
-            <p className="text-base font-semibold text-foreground truncate">{nameOf(players, match.teamB[0])}</p>
-            <p className="text-base font-semibold text-foreground truncate">{nameOf(players, match.teamB[1])}</p>
-          </div>
-          <p className="text-5xl sm:text-6xl font-bold text-foreground tabular-nums shrink-0">{scoreB}</p>
+        <div className="px-5 py-6 text-center">
+          <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-3">Team B</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamB[0])}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamB[1])}</p>
         </div>
       </div>
     </div>
@@ -113,13 +62,10 @@ export default function LivePage({
   const { code } = use(params);
   const normalized = code.toUpperCase();
   const { state, hydrated, exists } = useSharedState(normalized);
-  const showScore = (state.resultMode ?? "score") === "score";
 
   const activeMatches = state.courts
     .map((m, i) => ({ match: m, courtNumber: i + 1 }))
-    .filter(
-      (x): x is { match: PendingMatch; courtNumber: number } => x.match !== null
-    );
+    .filter((x): x is { match: Match; courtNumber: number } => x.match !== null);
 
   if (hydrated && !exists) {
     return (
@@ -170,7 +116,7 @@ export default function LivePage({
               No active matches right now.
             </p>
             <p className="text-sm text-muted/60 mt-1">
-              Check back when the host starts a match.
+              Check back once a queue fills up.
             </p>
           </div>
         ) : (
@@ -181,16 +127,10 @@ export default function LivePage({
                 courtNumber={courtNumber}
                 match={match}
                 players={state.players}
-                showScore={showScore}
               />
             ))}
           </div>
         )}
-        <UpcomingMatches
-          players={state.players}
-          courts={state.courts}
-          upcoming={state.upcoming}
-        />
       </main>
     </>
   );

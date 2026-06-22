@@ -11,28 +11,28 @@ const PASSWORD_KEY_PREFIX = "paddle-up-edit-pw-v1:";
 
 const FEATURES = [
   {
-    title: "Smart rotation",
-    body: "Everyone gets equal court time, partners with new teammates every round, and sits out one game between matches so nobody plays back-to-back.",
+    title: "Everyone joins themselves",
+    body: "No more typing every name into a roster. Each player opens the link on their own phone, types their name once, and they're in — like a Skribbl.io lobby.",
   },
   {
-    title: "Mixed or skill-separated",
-    body: "Rotate everyone in one pool, or flip the skill-separation switch to split casual and competitive players into their own rotations.",
+    title: "Novice or intermediate",
+    body: "Players pick their own tier and tap Join when they're ready to play. Tap Leave anytime to rest — no host needed to manage who's up next.",
+  },
+  {
+    title: "Automatic matchmaking",
+    body: "The moment four players in the same tier have joined and a court is free, a match forms automatically and shows up on every phone instantly.",
   },
   {
     title: "Up to four courts",
-    body: "Run one to four courts at once. Players are never double-booked, and the upcoming queue always shows the next three matches across all courts.",
+    body: "Run one to four courts at once. Novice and intermediate matches fill whichever court frees up next — nobody waits longer than a match cycle.",
   },
   {
-    title: "Real-time scoring",
-    body: "Editors bump the score and every phone in the group sees it update instantly — no refresh, no reloads.",
+    title: "Live everywhere",
+    body: "Every device watching the session — including a shared screen at courtside — sees joins, matches, and completions update in real time.",
   },
   {
-    title: "Server & announcer",
-    body: "Track which team is serving plus 1st / 2nd server, then tap the announcer to call the score or read the matchup out loud.",
-  },
-  {
-    title: "Rest, change, remove",
-    body: "Mark a player as resting to sit out a game, change a skill level from their profile, or remove them entirely — the queue re-shuffles automatically.",
+    title: "Light host controls",
+    body: "Whoever creates the session keeps a few admin powers — adjust court count, remove a player, or end the session — everything else is self-service.",
   },
 ];
 
@@ -43,11 +43,11 @@ const STEPS = [
   },
   {
     title: "Share the code",
-    body: "Your group opens the app, taps Join with code, and types the 6 characters. They join in view-only mode instantly.",
+    body: "Your group opens the link, types their name, and picks novice or intermediate. They're in the roster instantly — no roster typing for you.",
   },
   {
-    title: "Add players and play",
-    body: "Enter players with their skill levels, open the courts you'll use, generate matches, and score them as you go. End the session when everyone's done.",
+    title: "Tap Join, play, repeat",
+    body: "Players tap Join when they want to play. Once a tier has four, a match forms and assigns itself to a free court automatically.",
   },
 ];
 
@@ -140,9 +140,9 @@ export default function Landing() {
             ReZerve
           </h1>
           <p className="text-base sm:text-lg text-muted max-w-xl mx-auto">
-            Balanced matches, live scores, and a shared match queue for your
-            pickleball group. Create a session, share the 6-character code, and
-            you'll be playing in under a minute.
+            Self-service open play for your pickleball group. Create a session,
+            share the 6-character code, and everyone joins, picks a tier, and
+            gets matched up automatically &mdash; no roster typing required.
           </p>
 
           {mode === "idle" && (
@@ -350,14 +350,13 @@ export default function Landing() {
         {/* EDITING NOTE */}
         <section className="rounded-xl border border-accent/40 bg-accent/5 p-5 text-center">
           <h3 className="text-base font-bold text-foreground mb-1">
-            Viewers vs editors
+            Players vs host
           </h3>
           <p className="text-sm text-muted max-w-xl mx-auto">
-            Anyone with the session code can watch the rotation, scores, and
-            upcoming queue live. Only people who enter the edit password can add
-            players, generate matches, bump scores, or end the session. Join as a
-            viewer first and tap the lock pill in the top right when you're ready
-            to edit.
+            Anyone with the session code can join, pick a tier, and tap Join
+            queue &mdash; no password needed. Only whoever created the session
+            (the host) can enter the edit password to adjust court count,
+            remove a player, or end the session.
           </p>
         </section>
 

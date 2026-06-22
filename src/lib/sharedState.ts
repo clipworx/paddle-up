@@ -2,25 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
-import { AppState, INITIAL_STATE, PendingMatch, deriveMatchingStyle } from "./types";
-
-type LegacyAppState = Partial<AppState> & {
-  pending?: PendingMatch | null;
-};
+import { AppState, INITIAL_STATE } from "./types";
 
 function normalizeState(raw: unknown): AppState {
   if (!raw || typeof raw !== "object") return INITIAL_STATE;
-  const parsed = raw as LegacyAppState;
+  const parsed = raw as Partial<AppState>;
   const merged: AppState = { ...INITIAL_STATE, ...parsed };
-  const courts = Array.isArray(parsed.courts)
-    ? [...parsed.courts]
-    : parsed.pending !== undefined
-    ? [parsed.pending]
-    : [];
   const desired = Math.max(1, merged.courtCount ?? 1);
+  const courts = Array.isArray(parsed.courts) ? [...parsed.courts] : [];
   while (courts.length < desired) courts.push(null);
   merged.courts = courts.slice(0, desired);
-  merged.matchingStyle = deriveMatchingStyle(parsed);
+  merged.players = Array.isArray(parsed.players) ? parsed.players : [];
   return merged;
 }
 
