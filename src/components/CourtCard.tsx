@@ -10,10 +10,11 @@ type Props = {
   match: Match | null;
   players: Player[];
   busy: boolean;
+  isEditor: boolean;
   onComplete: () => void;
 };
 
-export function CourtCard({ code, courtIndex, match, players, busy, onComplete }: Props) {
+export function CourtCard({ code, courtIndex, match, players, busy, isEditor, onComplete }: Props) {
   return (
     <div className="rounded-2xl border border-border bg-background p-5 shadow-sm space-y-3">
       <div className="flex items-center justify-between">
@@ -29,13 +30,17 @@ export function CourtCard({ code, courtIndex, match, players, busy, onComplete }
       {match ? (
         <>
           <MatchDisplay match={match} players={players} />
-          <button
-            onClick={onComplete}
-            disabled={busy}
-            className="w-full rounded-lg border border-accent/50 bg-accent/5 text-accent py-2 text-sm font-semibold hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
-          >
-            {busy ? "Completing…" : "Complete match"}
-          </button>
+          {isEditor ? (
+            <button
+              onClick={onComplete}
+              disabled={busy}
+              className="w-full rounded-lg border border-accent/50 bg-accent/5 text-accent py-2 text-sm font-semibold hover:bg-accent hover:text-background transition-colors disabled:opacity-40"
+            >
+              {busy ? "Completing…" : "Complete match"}
+            </button>
+          ) : (
+            <p className="text-xs text-muted text-center py-1">Waiting for host to complete this match</p>
+          )}
         </>
       ) : (
         <p className="text-sm text-muted text-center py-4">Free</p>

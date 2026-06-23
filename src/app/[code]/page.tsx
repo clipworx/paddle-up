@@ -10,12 +10,13 @@ import { WaitingRoom } from "@/components/WaitingRoom";
 import { PendingRequests } from "@/components/PendingRequests";
 import { MyStatusCard } from "@/components/MyStatusCard";
 import { RosterList } from "@/components/RosterList";
+import { QueueList } from "@/components/QueueList";
 import { CourtCard } from "@/components/CourtCard";
 import { HostPanel } from "@/components/HostPanel";
 import { useNotifications } from "@/components/Notifications";
 import { useSharedState, getStoredPassword } from "@/lib/sharedState";
 import { getStoredIdentity, setStoredIdentity, generatePlayerId } from "@/lib/playerIdentity";
-import { applySetCourtCount, applyKickPlayer, applyAdmit, applyDecline } from "@/lib/sessionTransitions";
+import { applySetCourtCount, applyKickPlayer, applyAdmit, applyDecline, applyCompleteMatch } from "@/lib/sessionTransitions";
 import { Tier, MAX_COURTS } from "@/lib/types";
 
 export default function SessionPage({
@@ -146,14 +147,11 @@ export default function SessionPage({
     setBusy(false);
   };
 
-  const handleCompleteMatch = async (courtIndex: number) => {
-    setBusy(true);
-    await fetch(`/api/sessions/${normalized}/complete-match`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ courtIndex }),
+  const handleCompleteMatch = (courtIndex: number) => {
+    setState((s) => {
+      const result = applyCompleteMatch(s, courtIndex);
+      return "error" in result ? s : result;
     });
-    setBusy(false);
   };
 
   const handleSetCourtCount = (n: number) => {
@@ -262,7 +260,7 @@ export default function SessionPage({
               onJoinQueue={handleJoinQueue}
               onLeaveQueue={handleLeaveQueue}
             />
-            {isEditor && (
+            {isEditor ? (
               <>
                 <PendingRequests players={state.players} onAdmit={handleAdmit} onDecline={handleDecline} />
                 <HostPanel
@@ -270,28 +268,37 @@ export default function SessionPage({
                   onSetCourtCount={handleSetCourtCount}
                   onEndSession={handleEndSession}
                 />
+                <RosterList
+                  players={state.players.filter((p) => p.status === "admitted")}
+                  myId={playerId}
+                  isEditor={isEditor}
+                  onKick={handleKick}
+                />
               </>
+            ) : (
+              <QueueList players={state.players} myId={playerId} />
             )}
-            <RosterList
-              players={state.players.filter((p) => p.status === "admitted")}
-              myId={playerId}
-              isEditor={isEditor}
-              onKick={isEditor ? handleKick : undefined}
-            />
           </div>
 
-          <div className="lg:col-span-2 grid gap-4 sm:grid-cols-2">
-            {state.courts.map((match, i) => (
-              <CourtCard
-                key={i}
-                code={normalized}
-                courtIndex={i}
-                match={match}
-                players={state.players}
-                busy={busy}
-                onComplete={() => handleCompleteMatch(i)}
-              />
-            ))}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            {state.courts
+              .map((match, i) => ({ match, i }))
+              .filter(({ match }) => isEditor || match !== null)
+              .map(({ match, i }) => (
+                <CourtCard
+                  key={i}
+                  code={normalized}
+                  courtIndex={i}
+                  match={match}
+                  players={state.players}
+                  busy={busy}
+                  isEditor={isEditor}
+                  onComplete={() => handleCompleteMatch(i)}
+                />
+              ))}
+            {!isEditor && state.courts.every((c) => c === null) && (
+              <p className="text-sm text-muted sm:col-span-2 text-center py-8">No matches in progress right now.</p>
+            )}
           </div>
         </div>
       </main>

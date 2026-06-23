@@ -1,10 +1,12 @@
 "use client";
 
-import { use, useState } from "react";
+import { use } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
+import { EditLock } from "@/components/EditLock";
 import { MatchDisplay } from "@/components/MatchDisplay";
 import { useSharedState } from "@/lib/sharedState";
+import { applyCompleteMatch } from "@/lib/sessionTransitions";
 
 export default function CourtScoringPage({
   params,
@@ -14,19 +16,15 @@ export default function CourtScoringPage({
   const { code, n } = use(params);
   const normalized = code.toUpperCase();
   const courtIndex = Math.max(0, parseInt(n, 10) - 1);
-  const { state, hydrated, exists } = useSharedState(normalized);
-  const [busy, setBusy] = useState(false);
+  const { state, setState, hydrated, exists, isEditor, authenticate, logout } = useSharedState(normalized);
 
   const match = state.courts[courtIndex] ?? null;
 
-  const handleComplete = async () => {
-    setBusy(true);
-    await fetch(`/api/sessions/${normalized}/complete-match`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ courtIndex }),
+  const handleComplete = () => {
+    setState((s) => {
+      const result = applyCompleteMatch(s, courtIndex);
+      return "error" in result ? s : result;
     });
-    setBusy(false);
   };
 
   if (hydrated && !exists) {
@@ -60,6 +58,9 @@ export default function CourtScoringPage({
             <span className="text-border mx-1">·</span>
             <span className="text-sm text-foreground font-semibold">Court {courtIndex + 1}</span>
           </div>
+          <div className="shrink-0">
+            <EditLock isEditor={isEditor} onAuthenticate={authenticate} onLogout={logout} />
+          </div>
         </div>
       </nav>
 
@@ -67,13 +68,16 @@ export default function CourtScoringPage({
         {match ? (
           <>
             <MatchDisplay match={match} players={state.players} />
-            <button
-              onClick={handleComplete}
-              disabled={busy}
-              className="w-full rounded-xl bg-accent text-background py-3 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
-            >
-              {busy ? "Completing…" : "Complete match"}
-            </button>
+            {isEditor ? (
+              <button
+                onClick={handleComplete}
+                className="w-full rounded-xl bg-accent text-background py-3 text-sm font-semibold hover:bg-muted transition-colors"
+              >
+                Complete match
+              </button>
+            ) : (
+              <p className="text-center text-xs text-muted">Only the host can complete a match. Unlock with the host password above.</p>
+            )}
           </>
         ) : (
           <p className="text-center text-sm text-muted py-16">No match on this court right now.</p>
