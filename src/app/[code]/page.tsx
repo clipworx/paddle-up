@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EditLock } from "@/components/EditLock";
@@ -35,29 +35,33 @@ export default function SessionPage({
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A synchronous localStorage read, not a side effect — computing it here
+  // (rather than in the effect below) means we know on the very first render
+  // whether there's an identity to restore, so the render logic never has to
+  // guess "no identity" vs. "still confirming one" from playerId alone.
+  const storedIdentity = useMemo(() => getStoredIdentity(normalized), [normalized]);
 
-  // Restore identity from localStorage on mount, and confirm/recreate it
-  // server-side (covers the case where the player was kicked while away).
-  // Nothing to do if there's no stored identity — that's the fresh-device
-  // case, handled by falling through to the JoinGate render below. There's
-  // no separate "restoring" flag: while playerId is set but `myPlayer`
-  // hasn't shown up in state.players yet (via this join call or realtime),
-  // the render logic below already shows a loading state for that gap.
+  // Confirm the restored identity server-side (covers the case where the
+  // player was kicked while away). Nothing to do if there's no stored
+  // identity — that falls straight through to the JoinGate render below.
   useEffect(() => {
-    const stored = getStoredIdentity(normalized);
-    if (!stored) return;
+    if (!storedIdentity) return;
     let cancelled = false;
     fetch(`/api/sessions/${normalized}/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ playerId: stored.playerId, name: stored.name, password: getStoredPassword(normalized) }),
+      body: JSON.stringify({
+        playerId: storedIdentity.playerId,
+        name: storedIdentity.name,
+        password: getStoredPassword(normalized),
+      }),
     }).then(() => {
-      if (!cancelled) setPlayerId(stored.playerId);
+      if (!cancelled) setPlayerId(storedIdentity.playerId);
     });
     return () => {
       cancelled = true;
     };
-  }, [normalized]);
+  }, [normalized, storedIdentity]);
 
   const myPlayer = state.players.find((p) => p.id === playerId) ?? null;
 
@@ -207,7 +211,10 @@ export default function SessionPage({
     );
   }
 
-  if (!hydrated) {
+  if (!hydrated || (storedIdentity && !playerId)) {
+    // Either the session state hasn't loaded yet, or we have a stored
+    // identity that's still being confirmed with the server — in both
+    // cases, don't flash the JoinGate.
     return <main className="mx-auto max-w-xl w-full px-4 py-16 text-center text-sm text-muted">Loading…</main>;
   }
 
