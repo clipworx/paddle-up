@@ -35,19 +35,19 @@ function LiveCourtCard({
           Court {courtNumber}
         </h2>
       </div>
-      <div className="grid grid-cols-[1fr_auto_1fr] divide-x divide-black/5">
-        <div className="px-5 py-6 text-center">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] divide-y sm:divide-y-0 sm:divide-x divide-black/5">
+        <div className="px-5 py-4 sm:py-6 text-center">
           <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-3">Team A</p>
-          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamA[0])}</p>
-          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamA[1])}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug wrap-break-word">{nameOf(players, match.teamA[0])}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug wrap-break-word">{nameOf(players, match.teamA[1])}</p>
         </div>
-        <div className="flex items-center justify-center px-3 py-6">
+        <div className="flex items-center justify-center px-3 py-2 sm:py-6">
           <span className="text-xs font-bold text-muted uppercase tracking-widest">vs</span>
         </div>
-        <div className="px-5 py-6 text-center">
+        <div className="px-5 py-4 sm:py-6 text-center">
           <p className="text-[10px] uppercase tracking-widest text-muted font-semibold mb-3">Team B</p>
-          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamB[0])}</p>
-          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug">{nameOf(players, match.teamB[1])}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug wrap-break-word">{nameOf(players, match.teamB[0])}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground leading-snug wrap-break-word">{nameOf(players, match.teamB[1])}</p>
         </div>
       </div>
     </div>

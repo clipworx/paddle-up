@@ -11,6 +11,7 @@ import { PendingRequests } from "@/components/PendingRequests";
 import { MyStatusCard } from "@/components/MyStatusCard";
 import { RosterList } from "@/components/RosterList";
 import { QueueList } from "@/components/QueueList";
+import { JoinQrCode } from "@/components/JoinQrCode";
 import { CourtCard } from "@/components/CourtCard";
 import { HostPanel } from "@/components/HostPanel";
 import { useNotifications } from "@/components/Notifications";
@@ -234,13 +235,14 @@ export default function SessionPage({
           </Link>
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="text-sm text-muted hidden sm:inline">Session</span>
-            <span className="font-mono font-semibold text-accent text-sm">{normalized}</span>
+            <span className="font-mono font-semibold text-accent text-sm truncate">{normalized}</span>
             <span className="text-border hidden sm:inline mx-1">·</span>
             <Link
               href={`/${normalized}/live`}
-              className="text-xs text-muted hover:text-accent transition-colors hidden sm:inline"
+              className="text-xs text-muted hover:text-accent transition-colors shrink-0"
             >
-              Live view →
+              <span className="hidden sm:inline">Live view →</span>
+              <span className="sm:hidden">Live →</span>
             </Link>
           </div>
           <div className="shrink-0">
@@ -262,6 +264,7 @@ export default function SessionPage({
             />
             {isEditor ? (
               <>
+                <JoinQrCode code={normalized} />
                 <PendingRequests players={state.players} onAdmit={handleAdmit} onDecline={handleDecline} />
                 <HostPanel
                   courtCount={state.courtCount}
