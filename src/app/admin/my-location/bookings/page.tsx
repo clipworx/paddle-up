@@ -6,7 +6,7 @@ import { useLocationAdminContext } from "@/contexts/LocationAdminContext";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import type { Court, Booking, BookingStatus, CourtBlock } from "@/lib/types";
 import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
-import { formatDate, fmtTime, displayDate, ALL_HOURS_24, CLOSE_HOURS } from "@/lib/admin-utils";
+import { formatDate, fmtTime, displayDate, displayMonth, ALL_HOURS_24, CLOSE_HOURS } from "@/lib/admin-utils";
 
 function normEnd(t: string): string {
   return t === "00:00" ? "24:00" : t;
@@ -44,10 +44,12 @@ export default function BookingsPage() {
   const today = formatDate(new Date());
 
   const [date, setDate] = useState(today);
+  const [month, setMonth] = useState(today.slice(0, 7));
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [courts, setCourts]     = useState<Court[] | null>(null);
   const [courtPage, setCourtPage] = useState(0);
   const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [monthBookings, setMonthBookings] = useState<Booking[] | null>(null);
   const [blocks, setBlocks]     = useState<CourtBlock[] | null>(null);
   const [nowTop, setNowTop]     = useState<number | null>(null);
 
@@ -105,13 +107,22 @@ export default function BookingsPage() {
       });
   }, [me]);
 
-  // ── Load bookings for selected date ──────────────────────────────────────
+  // ── Load bookings for selected date (grid view) ──────────────────────────
   const loadBookings = useCallback(async (d: string) => {
     setBookings(null);
     const res = await fetch(`/api/admin/bookings?date=${d}&limit=200`);
     if (res.status === 401 || res.status === 403) return;
     const json = await res.json();
     setBookings(json.bookings ?? []);
+  }, []);
+
+  // ── Load bookings for selected month (list view) ─────────────────────────
+  const loadMonthBookings = useCallback(async (m: string) => {
+    setMonthBookings(null);
+    const res = await fetch(`/api/admin/bookings?month=${m}&limit=500`);
+    if (res.status === 401 || res.status === 403) return;
+    const json = await res.json();
+    setMonthBookings(json.bookings ?? []);
   }, []);
 
   const loadBlocks = useCallback(async (d: string) => {
@@ -122,13 +133,15 @@ export default function BookingsPage() {
   }, []);
 
   useEffect(() => { loadBookings(date); loadBlocks(date); }, [date, loadBookings, loadBlocks]);
+  useEffect(() => { loadMonthBookings(month); }, [month, loadMonthBookings]);
 
   // Keep detail modal in sync after reload
   useEffect(() => {
-    if (selectedBooking && bookings) {
-      setSelectedBooking(bookings.find((b) => b.id === selectedBooking.id) ?? null);
-    }
-  }, [bookings]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedBooking) return;
+    const updated = bookings?.find((b) => b.id === selectedBooking.id)
+      ?? monthBookings?.find((b) => b.id === selectedBooking.id);
+    if (bookings || monthBookings) setSelectedBooking(updated ?? null);
+  }, [bookings, monthBookings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived grid values ──────────────────────────────────────────────────
   const weekend = (() => { const d = new Date(date + "T12:00:00").getDay(); return d === 0 || d === 6; })();
@@ -237,7 +250,20 @@ export default function BookingsPage() {
     setDate(formatDate(d));
   }
 
-  function openNewBooking(courtId?: string, slotIdx?: number) {
+  function prevMonth() {
+    const [y, m] = month.split("-").map(Number);
+    const d = new Date(y, m - 2, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    setListPage(0);
+  }
+  function nextMonth() {
+    const [y, m] = month.split("-").map(Number);
+    const d = new Date(y, m, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    setListPage(0);
+  }
+
+  function openNewBooking(courtId?: string, slotIdx?: number, dateOverride?: string) {
     const activeCourts = (courts ?? []).filter((c) => c.is_active);
     let startH = location?.open_hour ?? 7;
     let endH   = startH + 1;
@@ -247,7 +273,7 @@ export default function BookingsPage() {
     }
     setAdminBookingForm({
       court_id: courtId ?? activeCourts[0]?.id ?? "",
-      date,
+      date: dateOverride ?? date,
       start_hour: startH,
       end_hour: endH,
       booker_name: "", booker_phone: "", booker_email: "", notes: "",
@@ -287,6 +313,7 @@ export default function BookingsPage() {
       if (!res.ok) throw new Error("Cancel failed");
       setSelectedBooking(null);
       loadBookings(date);
+      loadMonthBookings(month);
     } catch (err) { alert((err as Error).message); }
     finally { setCancellingId(null); }
   }
@@ -306,6 +333,7 @@ export default function BookingsPage() {
       if (!res.ok) throw new Error("Refund failed");
       setSelectedBooking(null);
       loadBookings(date);
+      loadMonthBookings(month);
     } catch (err) { alert((err as Error).message); }
     finally { setRefundingId(null); }
   }
@@ -316,6 +344,7 @@ export default function BookingsPage() {
       const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}/confirm`, { method: "POST" });
       if (!res.ok) throw new Error("Confirm failed");
       loadBookings(date);
+      loadMonthBookings(month);
     } catch (err) { alert((err as Error).message); }
     finally { setConfirmingId(null); }
   }
@@ -359,6 +388,7 @@ export default function BookingsPage() {
       }
       setRescheduleTarget(null);
       loadBookings(date);
+      loadMonthBookings(month);
     } catch (err) {
       setRescheduleError((err as Error).message);
     } finally {
@@ -475,39 +505,75 @@ export default function BookingsPage() {
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={prevDay}
-              className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
-            />
-            <button
-              onClick={nextDay}
-              className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
-            >
-              <ChevronRight size={15} />
-            </button>
-          </div>
+          {viewMode === "grid" ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={prevDay}
+                  className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
+                />
+                <button
+                  onClick={nextDay}
+                  className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
 
-          <div className="hidden md:flex items-center gap-2">
-            <span className="text-sm text-muted">{displayDate(date)}</span>
-            {date === today && (
-              <span className="rounded-full bg-accent/15 text-accent px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
-                Today
-              </span>
-            )}
-          </div>
+              <div className="hidden md:flex items-center gap-2">
+                <span className="text-sm text-muted">{displayDate(date)}</span>
+                {date === today && (
+                  <span className="rounded-full bg-accent/15 text-accent px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+                    Today
+                  </span>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={prevMonth}
+                  className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <input
+                  type="month"
+                  value={month}
+                  onChange={(e) => { setMonth(e.target.value); setListPage(0); }}
+                  className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent"
+                />
+                <button
+                  onClick={nextMonth}
+                  className="rounded-lg border border-border w-8 h-8 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+
+              <div className="hidden md:flex items-center gap-2">
+                <span className="text-sm text-muted">{displayMonth(month)}</span>
+                {month === today.slice(0, 7) && (
+                  <span className="rounded-full bg-accent/15 text-accent px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest">
+                    This month
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Content ── */}
-        {bookings === null || courts === null ? (
+        {(viewMode === "list" ? monthBookings === null : bookings === null) || courts === null ? (
           <p className="text-sm text-muted py-8 text-center">Loading…</p>
         ) : courts.length === 0 ? (
           <div className="rounded-xl border border-border bg-background p-8 text-center shadow-sm">
@@ -517,7 +583,7 @@ export default function BookingsPage() {
           /* ── List view ── */
           (() => {
             const q = listSearch.trim().toLowerCase();
-            const filtered = (bookings ?? [])
+            const filtered = (monthBookings ?? [])
               .filter((b) => b.status === "confirmed" || b.status === "pending_payment" || b.status === "cancelled" || b.status === "refunded")
               .filter((b) => listStatusFilter === "all" || b.status === listStatusFilter)
               .filter((b) => !q || b.booker_name.toLowerCase().includes(q) || courtName(b.court_id).toLowerCase().includes(q))
@@ -525,7 +591,7 @@ export default function BookingsPage() {
                 const pendingA = a.status === "pending_payment" ? 0 : 1;
                 const pendingB = b.status === "pending_payment" ? 0 : 1;
                 if (pendingA !== pendingB) return pendingA - pendingB;
-                return a.start_time.localeCompare(b.start_time) || courtName(a.court_id).localeCompare(courtName(b.court_id));
+                return a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time) || courtName(a.court_id).localeCompare(courtName(b.court_id));
               });
             const LIST_PAGE_SIZE = 10;
             const listTotalPages = Math.ceil(filtered.length / LIST_PAGE_SIZE);
@@ -559,7 +625,7 @@ export default function BookingsPage() {
                     className="flex-1 min-w-48 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent"
                   />
                   <button
-                    onClick={() => loadBookings(date)}
+                    onClick={() => loadMonthBookings(month)}
                     title="Refresh"
                     className="rounded-lg border border-border w-9 h-9 flex items-center justify-center text-muted hover:text-foreground hover:border-accent hover:bg-accent/5 transition-colors shrink-0"
                   >
@@ -580,9 +646,9 @@ export default function BookingsPage() {
 
                 {filtered.length === 0 ? (
                   <div className="rounded-xl border border-border bg-background p-10 text-center shadow-sm">
-                    <p className="text-sm text-muted">{q || listStatusFilter !== "all" ? "No bookings match your search." : `No bookings on ${displayDate(date)}.`}</p>
+                    <p className="text-sm text-muted">{q || listStatusFilter !== "all" ? "No bookings match your search." : `No bookings in ${displayMonth(month)}.`}</p>
                     {!q && listStatusFilter === "all" && (
-                      <button onClick={() => openNewBooking()} className="mt-4 rounded-full bg-accent text-white px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">
+                      <button onClick={() => openNewBooking(undefined, undefined, `${month}-01`)} className="mt-4 rounded-full bg-accent text-white px-5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">
                         + New booking
                       </button>
                     )}
@@ -594,6 +660,7 @@ export default function BookingsPage() {
                       <table className="w-full text-sm border-collapse">
                         <thead>
                           <tr className="border-b border-border bg-surface text-left">
+                            <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Date</th>
                             <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Time</th>
                             <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Space</th>
                             <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted">Booker</th>
@@ -608,6 +675,9 @@ export default function BookingsPage() {
                         onClick={() => setSelectedBooking(b)}
                         className={`cursor-pointer hover:bg-accent/5 transition-colors ${i > 0 ? "border-t border-border" : ""}`}
                       >
+                        <td className="px-4 py-3 whitespace-nowrap text-foreground font-medium">
+                          {displayDate(b.date)}
+                        </td>
                         <td className="px-4 py-3 whitespace-nowrap tabular-nums text-foreground font-medium">
                           {fmtTime(b.start_time)} – {fmtTime(b.end_time)}
                         </td>
@@ -909,6 +979,7 @@ export default function BookingsPage() {
                       }
                       setAdminBookingForm(null);
                       loadBookings(date);
+                      loadMonthBookings(month);
                     } catch (err) {
                       setAdminBookingError((err as Error).message);
                     } finally {

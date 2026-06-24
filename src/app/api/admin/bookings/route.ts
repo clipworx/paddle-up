@@ -157,12 +157,17 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const page       = Math.max(1, parseInt(searchParams.get("page")  ?? "1",  10));
-  const limit      = Math.min(200, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
+  const limit      = Math.min(500, Math.max(1, parseInt(searchParams.get("limit") ?? "20", 10)));
   const status     = searchParams.get("status");
   const search     = searchParams.get("search")?.trim() ?? "";
   const date       = searchParams.get("date")?.trim();
+  const month      = searchParams.get("month")?.trim();
   const locationId = searchParams.get("location_id")?.trim();
   const offset     = (page - 1) * limit;
+
+  if (month && !/^\d{4}-\d{2}$/.test(month)) {
+    return NextResponse.json({ error: "month_invalid" }, { status: 400 });
+  }
 
   const supabase = getAdminSupabase();
 
@@ -189,6 +194,13 @@ export async function GET(req: Request) {
   if (courtIds) query = query.in("court_id", courtIds);
   if (status)   query = query.eq("status", status);
   if (date)     query = query.eq("date", date);
+  if (month) {
+    const [y, m] = month.split("-").map(Number);
+    const monthStart = `${month}-01`;
+    const nextMonth = new Date(y, m, 1);
+    const monthEnd = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
+    query = query.gte("date", monthStart).lt("date", monthEnd);
+  }
   if (search)   query = query.or(`booker_name.ilike.%${search}%,booker_phone.ilike.%${search}%,booker_email.ilike.%${search}%`);
 
   const { data, error, count } = await query;

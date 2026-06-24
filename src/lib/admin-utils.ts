@@ -32,6 +32,11 @@ export function displayDate(iso: string) {
   });
 }
 
+export function displayMonth(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 export function fmtPeso(n: number): string {
   return "₱" + n.toLocaleString("en-PH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
