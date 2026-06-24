@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { MapPin, Megaphone, Volleyball } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
+import { useNotifications } from "@/components/Notifications";
 import type { Court, Booking, Location, CourtBlock } from "@/lib/types";
 import { TIME_SLOTS, HALF_HOUR_SLOTS } from "@/lib/types";
 import type { TimeSlot } from "@/lib/types";
@@ -121,21 +122,36 @@ function isSlotBlockedByRelated(slots: TimeSlot[], courts: Court[], bookings: Bo
   return courts.some((c) => c.parent_court_id === court.id && isSlotBooked(slots, bookings, c.id, slotIdx));
 }
 
-function isSlotAdminBlocked(slots: TimeSlot[], blocks: CourtBlock[], courtId: string, slotIdx: number): boolean {
+function findCourtBlock(slots: TimeSlot[], blocks: CourtBlock[], courtId: string, slotIdx: number): CourtBlock | null {
   const slot = slots[slotIdx];
   const slotEnd = normEnd(slot.end);
-  return blocks.some((blk) => {
+  return blocks.find((blk) => {
     if (blk.court_id !== courtId) return false;
     const bStart = blk.start_time.slice(0, 5);
     const bEnd = normEnd(blk.end_time.slice(0, 5));
     return bStart < slotEnd && bEnd > slot.start;
-  });
+  }) ?? null;
+}
+
+function isSlotAdminBlocked(slots: TimeSlot[], blocks: CourtBlock[], courtId: string, slotIdx: number): boolean {
+  return findCourtBlock(slots, blocks, courtId, slotIdx) !== null;
 }
 
 function isSlotUnavailable(slots: TimeSlot[], courts: Court[], bookings: Booking[], blocks: CourtBlock[], court: Court, slotIdx: number): boolean {
   return isSlotBooked(slots, bookings, court.id, slotIdx)
     || isSlotBlockedByRelated(slots, courts, bookings, court, slotIdx)
     || isSlotAdminBlocked(slots, blocks, court.id, slotIdx);
+}
+
+// Why a slot shows as "Closed" to the customer — either a linked shared-space
+// court is in use, or the venue blocked it off (with an optional reason).
+function blockedReason(slots: TimeSlot[], courts: Court[], bookings: Booking[], blocks: CourtBlock[], court: Court, slotIdx: number): string | null {
+  if (isSlotBlockedByRelated(slots, courts, bookings, court, slotIdx)) {
+    return "This shared space is in use on a linked court right now.";
+  }
+  const block = findCourtBlock(slots, blocks, court.id, slotIdx);
+  if (block) return block.reason?.trim() || "This slot has been blocked off by the venue.";
+  return null;
 }
 
 function isPast(slots: TimeSlot[], dateIso: string, slotIdx: number): boolean {
@@ -350,6 +366,7 @@ function LocationPicker({
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
+  const { notify } = useNotifications();
   const today = formatDate(new Date());
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [locationNotFound, setLocationNotFound] = useState(false);
@@ -1288,6 +1305,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                             const isPending = matchingBooking?.status === "pending_payment";
                             const booked = !!matchingBooking;
                             const blockedByRelated = !booked && (isSlotBlockedByRelated(slots, courts, bookings, court, absIdx) || isSlotAdminBlocked(slots, blocks, court.id, absIdx));
+                            const reason = blockedByRelated ? blockedReason(slots, courts, bookings, blocks, court, absIdx) : null;
                             const past = isPast(slots, date, absIdx);
                             const available = !booked && !blockedByRelated && !past && court.is_active;
                             const rowSpan = slotInfo?.rowSpan ?? 1;
@@ -1295,7 +1313,11 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                               <td
                                 key={court.id}
                                 rowSpan={rowSpan}
-                                onClick={() => available && openBookingModal(court.id, absIdx)}
+                                title={reason ?? undefined}
+                                onClick={() => {
+                                  if (available) openBookingModal(court.id, absIdx);
+                                  else if (reason) notify(reason, "info");
+                                }}
                                 className={`px-1.5 align-bottom transition-colors ${visibleCourts.length > 1 ? "border-l border-border" : ""} ${
                                   available
                                     ? "slot-open cursor-pointer"
@@ -1304,7 +1326,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                                     : booked
                                     ? "slot-booked"
                                     : blockedByRelated
-                                    ? "slot-closed"
+                                    ? "slot-closed cursor-pointer"
                                     : "slot-past"
                                 }`}
                               >

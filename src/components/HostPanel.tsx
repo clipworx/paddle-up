@@ -19,7 +19,7 @@ export function HostPanel({ code, courtCount, onSetCourtCount, onEndSession }: P
 
   useEffect(() => {
     const url = `${window.location.origin}/${code}`;
-    QRCode.toDataURL(url, { width: 112, margin: 1 }).then(setQrDataUrl).catch(() => setQrDataUrl(null));
+    QRCode.toDataURL(url, { width: 224, margin: 1 }).then(setQrDataUrl).catch(() => setQrDataUrl(null));
   }, [code]);
 
   const handleCopy = () => {
@@ -57,7 +57,7 @@ export function HostPanel({ code, courtCount, onSetCourtCount, onEndSession }: P
         </div>
 
         <div className="bg-surface rounded-lg px-3.5 py-3 flex items-center gap-3">
-          <div className="w-14 h-14 rounded-md bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden">
+          <div className="w-28 h-28 rounded-md bg-background border border-border flex items-center justify-center shrink-0 overflow-hidden">
             {qrDataUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- generated data URI, not a remote/static asset
               <img src={qrDataUrl} alt={`QR code to join session ${code}`} className="w-full h-full object-contain" />

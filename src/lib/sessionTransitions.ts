@@ -134,6 +134,44 @@ export function applyQueueLeave(state: AppState, playerId: string): Transition {
   };
 }
 
+export function applyAdjustScore(state: AppState, courtIndex: number, team: "A" | "B", delta: 1 | -1): Transition {
+  if (courtIndex < 0 || courtIndex >= state.courts.length) return { error: "invalid_court" };
+  const match = state.courts[courtIndex];
+  if (!match) return { error: "no_match" };
+  const key = team === "A" ? "scoreA" : "scoreB";
+  const nextScore = Math.max(0, (match[key] ?? 0) + delta);
+  return {
+    ...state,
+    // Every point (won or corrected) starts the next one fresh at a 1st serve.
+    courts: state.courts.map((c, i) => (i === courtIndex ? { ...c!, [key]: nextScore, serveNumber: 1 } : c)),
+  };
+}
+
+// 1st serve faults → 2nd serve. 2nd serve faults (double fault) → back to
+// 1st serve for the next point; the score itself is left to the host's
+// own +/− taps, this is purely the serve-attempt indicator.
+export function applyFault(state: AppState, courtIndex: number): Transition {
+  if (courtIndex < 0 || courtIndex >= state.courts.length) return { error: "invalid_court" };
+  const match = state.courts[courtIndex];
+  if (!match) return { error: "no_match" };
+  const nextServe = (match.serveNumber ?? 1) === 1 ? 2 : 1;
+  return {
+    ...state,
+    courts: state.courts.map((c, i) => (i === courtIndex ? { ...c!, serveNumber: nextServe } : c)),
+  };
+}
+
+export function applySwitchServer(state: AppState, courtIndex: number): Transition {
+  if (courtIndex < 0 || courtIndex >= state.courts.length) return { error: "invalid_court" };
+  const match = state.courts[courtIndex];
+  if (!match) return { error: "no_match" };
+  const nextServer = match.servingTeam === "A" ? "B" : "A";
+  return {
+    ...state,
+    courts: state.courts.map((c, i) => (i === courtIndex ? { ...c!, servingTeam: nextServer, serveNumber: 1 } : c)),
+  };
+}
+
 export function applyCompleteMatch(state: AppState, courtIndex: number): Transition {
   if (courtIndex < 0 || courtIndex >= state.courts.length) return { error: "invalid_court" };
   const match = state.courts[courtIndex];
@@ -213,6 +251,10 @@ function tryFormMatches(state: AppState): AppState {
         teamA: [four[0].id, four[1].id],
         teamB: [four[2].id, four[3].id],
         createdAt: Date.now(),
+        scoreA: 0,
+        scoreB: 0,
+        servingTeam: "A",
+        serveNumber: 1,
       };
       players = players.map((p) =>
         fourIds.has(p.id) ? { ...p, inMatchOnCourt: courtIndex, joined: false, joinedQueueAt: null } : p

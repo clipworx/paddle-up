@@ -37,7 +37,12 @@ export function CourtCard({ code, courtIndex, match, players, busy, isEditor, on
           <div className="font-display italic font-extrabold text-[22px] text-foreground leading-tight">{nameOf(match.teamA[0])}</div>
           <div className="font-display italic font-extrabold text-[22px] text-foreground leading-tight">{nameOf(match.teamA[1])}</div>
         </div>
-        <div className="font-display italic font-black text-[22px] text-warning px-3.5">VS</div>
+        <div className="flex flex-col items-center px-2.5 shrink-0">
+          <div className="font-display italic font-black text-[24px] text-foreground leading-none">
+            {match.scoreA ?? 0} – {match.scoreB ?? 0}
+          </div>
+          <div className="font-op-mono text-[8px] text-warning tracking-[0.12em] mt-0.5">VS</div>
+        </div>
         <div className="text-right">
           <div className="font-display italic font-extrabold text-[22px] text-foreground leading-tight">{nameOf(match.teamB[0])}</div>
           <div className="font-display italic font-extrabold text-[22px] text-foreground leading-tight">{nameOf(match.teamB[1])}</div>

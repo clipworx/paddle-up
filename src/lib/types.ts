@@ -25,6 +25,10 @@ export type Match = {
   teamA: Team;
   teamB: Team;
   createdAt: number;
+  scoreA: number;
+  scoreB: number;
+  servingTeam: "A" | "B";
+  serveNumber: 1 | 2;
 };
 
 export type AppState = {

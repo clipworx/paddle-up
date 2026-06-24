@@ -72,7 +72,12 @@ export default function LivePage({
                       <div className="font-display italic font-extrabold text-[21px] text-foreground leading-tight">{nameOf(state.players, match.teamA[0])}</div>
                       <div className="font-display italic font-extrabold text-[21px] text-foreground leading-tight">{nameOf(state.players, match.teamA[1])}</div>
                     </div>
-                    <div className="font-display italic font-black text-[19px] text-warning px-2">VS</div>
+                    <div className="flex flex-col items-center px-2 shrink-0">
+                      <div className="font-display italic font-black text-[19px] text-foreground leading-none">
+                        {match.scoreA ?? 0} – {match.scoreB ?? 0}
+                      </div>
+                      <div className="font-op-mono text-[7px] text-warning tracking-[0.12em] mt-0.5">VS</div>
+                    </div>
                     <div className="text-right">
                       <div className="font-display italic font-extrabold text-[21px] text-foreground leading-tight">{nameOf(state.players, match.teamB[0])}</div>
                       <div className="font-display italic font-extrabold text-[21px] text-foreground leading-tight">{nameOf(state.players, match.teamB[1])}</div>

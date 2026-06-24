@@ -18,6 +18,7 @@ import { useSharedState, getStoredPassword } from "@/lib/sharedState";
 import { getStoredIdentity, setStoredIdentity, generatePlayerId } from "@/lib/playerIdentity";
 import { applySetCourtCount, applyKickPlayer, applyAdmit, applyDecline, applyCompleteMatch } from "@/lib/sessionTransitions";
 import { queuedInTier } from "@/lib/openPlayDisplay";
+import { announceMatchComplete, isVoiceMuted } from "@/lib/voiceOver";
 import { Tier, TIERS, MAX_COURTS } from "@/lib/types";
 
 export default function SessionPage({
@@ -154,6 +155,9 @@ export default function SessionPage({
   };
 
   const handleCompleteMatch = (courtIndex: number) => {
+    const match = state.courts[courtIndex];
+    const scoreA = match?.scoreA ?? 0;
+    const scoreB = match?.scoreB ?? 0;
     let succeeded = false;
     setState((s) => {
       const result = applyCompleteMatch(s, courtIndex);
@@ -164,6 +168,7 @@ export default function SessionPage({
     if (succeeded) {
       setShowKO(true);
       setTimeout(() => setShowKO(false), 2800);
+      if (isEditor && !isVoiceMuted()) announceMatchComplete(scoreA, scoreB);
     }
   };
 
