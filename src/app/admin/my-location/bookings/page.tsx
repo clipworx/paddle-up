@@ -350,6 +350,10 @@ export default function BookingsPage() {
           slot_taken: "That time slot is already booked.",
           cannot_reschedule: "This booking cannot be rescheduled.",
           missing_fields: "Please fill in all required fields.",
+          date_invalid: "Invalid date.",
+          time_invalid: "Invalid time.",
+          time_range_invalid: "End time must be after start time.",
+          slot_blocked: "That slot is blocked off.",
         };
         throw new Error(msg[json.error] ?? json.error ?? "Failed to reschedule");
       }
@@ -891,7 +895,16 @@ export default function BookingsPage() {
                       });
                       const json = await res.json().catch(() => ({}));
                       if (!res.ok) {
-                        const msg: Record<string, string> = { slot_taken: "That time slot is already booked.", missing_fields: "Please fill in all required fields." };
+                        const msg: Record<string, string> = {
+                          slot_taken: "That time slot is already booked.",
+                          missing_fields: "Please fill in all required fields.",
+                          slot_blocked: "That slot is blocked off.",
+                          invalid_email: "Enter a valid email address.",
+                          name_too_long: "Name is too long (max 100 characters).",
+                          date_invalid: "Invalid date.",
+                          time_invalid: "Invalid time.",
+                          time_range_invalid: "End time must be after start time.",
+                        };
                         throw new Error(msg[json.error] ?? json.error ?? "Failed to create booking");
                       }
                       setAdminBookingForm(null);

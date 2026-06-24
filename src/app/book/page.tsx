@@ -635,6 +635,14 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     if (!selectedLocation) return;
     const conflict = rangeConflict();
     if (conflict) { setFormError(conflict); return; }
+    if (!form.booker_name.trim()) {
+      setFormError("Your name is required.");
+      return;
+    }
+    if (form.booker_name.trim().length > 100) {
+      setFormError("Name is too long (max 100 characters).");
+      return;
+    }
     if (!isValidPHPhone(form.booker_phone)) {
       setFormError("Enter a valid Philippine mobile number (e.g. 09171234567 or +639171234567).");
       return;
@@ -645,6 +653,10 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.booker_email.trim())) {
       setFormError("Enter a valid email address.");
+      return;
+    }
+    if (isPaxCourt && (form.player_count < 1 || form.player_count > 50)) {
+      setFormError("Number of players must be between 1 and 50.");
       return;
     }
     setFormError(null);
@@ -673,11 +685,18 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       const msgs: Record<string, string> = {
         slot_taken: "That slot was just booked. Please pick another time.",
         name_required: "Name is required.",
+        name_too_long: "Name is too long (max 100 characters).",
         phone_required: "Phone number is required.",
         phone_invalid: "Enter a valid Philippine mobile number (e.g. 09171234567).",
         email_required: "Email address is required.",
         valid_email_required: "Enter a valid email address.",
+        notes_too_long: "Notes are too long (max 500 characters).",
         missing_fields: "Please fill in all required fields.",
+        date_invalid: "Invalid date.",
+        time_invalid: "Invalid time.",
+        time_range_invalid: "End time must be after start time.",
+        slot_in_past: "That time has already passed. Please pick another slot.",
+        player_count_invalid: "Invalid number of players.",
         split_rate_not_allowed: "This location does not allow bookings that span the day and night rate. Please book day and night slots separately.",
       };
       setFormError(msgs[json.error] ?? json.error ?? "Booking failed.");
@@ -1553,16 +1572,17 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                       <input
                         type="number"
                         min={1}
+                        max={50}
                         value={form.player_count}
                         onChange={(e) => {
                           const v = parseInt(e.target.value);
-                          if (!isNaN(v) && v >= 1) setForm((f) => ({ ...f, player_count: v }));
+                          if (!isNaN(v) && v >= 1 && v <= 50) setForm((f) => ({ ...f, player_count: v }));
                         }}
                         className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-base text-center font-semibold text-foreground focus:outline-none focus:border-accent"
                       />
                       <button
                         type="button"
-                        onClick={() => setForm((f) => ({ ...f, player_count: f.player_count + 1 }))}
+                        onClick={() => setForm((f) => ({ ...f, player_count: Math.min(50, f.player_count + 1) }))}
                         className="w-9 h-9 rounded-lg border border-border text-foreground text-lg font-bold hover:bg-accent/10 hover:border-accent transition-colors shrink-0"
                       >
                         +
@@ -1583,6 +1603,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                     ref={nameRef}
                     type="text"
                     required
+                    maxLength={100}
                     value={form.booker_name}
                     onChange={(e) => setForm({ ...form, booker_name: e.target.value })}
                     className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
@@ -1617,10 +1638,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 {/* Email */}
                 <label className="block space-y-1.5">
                   <span className="text-xs uppercase tracking-wide text-muted font-semibold">
-                    Email
+                    Email <span className="text-accent">*</span>
                   </span>
                   <input
                     type="email"
+                    required
+                    maxLength={200}
                     value={form.booker_email}
                     onChange={(e) => setForm({ ...form, booker_email: e.target.value })}
                     className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent"
@@ -1637,6 +1660,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
                     rows={2}
+                    maxLength={500}
                     className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-accent resize-none"
                     placeholder="Anything else we should know…"
                   />

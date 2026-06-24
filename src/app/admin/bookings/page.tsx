@@ -382,6 +382,10 @@ export default function AdminBookingsPage() {
           slot_taken: "That time slot is already booked.",
           cannot_reschedule: "This booking cannot be rescheduled.",
           missing_fields: "Please fill in all required fields.",
+          date_invalid: "Invalid date.",
+          time_invalid: "Invalid time.",
+          time_range_invalid: "End time must be after start time.",
+          slot_blocked: "That slot is blocked off.",
         };
         throw new Error(msg[json.error] ?? json.error ?? "Failed to reschedule");
       }

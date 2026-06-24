@@ -3,11 +3,12 @@ import { getServerSupabase } from "@/lib/supabase-server";
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { sendBookingNotification, sendBookingConfirmation } from "@/lib/email";
 import { sendTelegramMessage, buildNewBookingMessage } from "@/lib/telegram";
+import { TIME_RE, DATE_RE, normEndTime } from "@/lib/bookingValidation";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!date || !DATE_RE.test(date)) {
     return NextResponse.json({ error: "date_required" }, { status: 400 });
   }
 
@@ -50,13 +51,17 @@ export async function POST(req: Request) {
   const booker_phone = typeof body.booker_phone === "string" ? body.booker_phone.trim() : "";
   const booker_email = typeof body.booker_email === "string" ? body.booker_email.trim().toLowerCase() : "";
   const player_count = typeof body.player_count === "number" ? body.player_count : 4;
-  const notes = typeof body.notes === "string" ? body.notes.trim() || null : null;
+  const rawNotes = typeof body.notes === "string" ? body.notes.trim() : "";
+  const notes = rawNotes || null;
 
   if (!court_id || !date || !start_time || !end_time) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
   }
   if (!booker_name) {
     return NextResponse.json({ error: "name_required" }, { status: 400 });
+  }
+  if (booker_name.length > 100) {
+    return NextResponse.json({ error: "name_too_long" }, { status: 400 });
   }
   if (!booker_phone) {
     return NextResponse.json({ error: "phone_required" }, { status: 400 });
@@ -68,14 +73,25 @@ export async function POST(req: Request) {
   if (!booker_email) {
     return NextResponse.json({ error: "email_required" }, { status: 400 });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
+  if (booker_email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(booker_email)) {
     return NextResponse.json({ error: "valid_email_required" }, { status: 400 });
   }
-  if (player_count < 2 || player_count > 4) {
-    return NextResponse.json({ error: "player_count_invalid" }, { status: 400 });
+  if (rawNotes.length > 500) {
+    return NextResponse.json({ error: "notes_too_long" }, { status: 400 });
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!DATE_RE.test(date)) {
     return NextResponse.json({ error: "date_invalid" }, { status: 400 });
+  }
+  if (!TIME_RE.test(start_time) || !TIME_RE.test(end_time)) {
+    return NextResponse.json({ error: "time_invalid" }, { status: 400 });
+  }
+  if (normEndTime(end_time) <= start_time) {
+    return NextResponse.json({ error: "time_range_invalid" }, { status: 400 });
+  }
+  const [slotY, slotM, slotD] = date.split("-").map(Number);
+  const [slotH, slotMin] = start_time.split(":").map(Number);
+  if (new Date(slotY, slotM - 1, slotD, slotH, slotMin) < new Date()) {
+    return NextResponse.json({ error: "slot_in_past" }, { status: 400 });
   }
 
   const supabase = getServerSupabase();
@@ -83,9 +99,16 @@ export async function POST(req: Request) {
   // Fetch court + location info; verify location is active and subscription is valid
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, is_active, parent_court_id, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking)")
+    .select("name, location_id, is_active, parent_court_id, custom_rate_unit, custom_day_rate, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking)")
     .eq("id", court_id)
     .single();
+
+  const isPaxCourt = courtRow?.custom_rate_unit === "pax" && courtRow?.custom_day_rate != null;
+  const minPlayers = isPaxCourt ? 1 : 2;
+  const maxPlayers = isPaxCourt ? 50 : 4;
+  if (player_count < minPlayers || player_count > maxPlayers) {
+    return NextResponse.json({ error: "player_count_invalid" }, { status: 400 });
+  }
 
   const loc = (courtRow?.locations as unknown) as {
     name: string;

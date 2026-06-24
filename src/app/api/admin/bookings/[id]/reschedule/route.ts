@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { getAdminClaims } from "@/lib/server-auth";
+import { TIME_RE, DATE_RE, normEndTime } from "@/lib/bookingValidation";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -14,12 +15,18 @@ export async function PATCH(req: Request, { params }: Params) {
 
   if (!date || !start_time || !end_time)
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  if (!DATE_RE.test(date))
+    return NextResponse.json({ error: "date_invalid" }, { status: 400 });
+  if (!TIME_RE.test(start_time) || !TIME_RE.test(end_time))
+    return NextResponse.json({ error: "time_invalid" }, { status: 400 });
+  if (normEndTime(end_time) <= start_time)
+    return NextResponse.json({ error: "time_range_invalid" }, { status: 400 });
 
   const supabase = getAdminSupabase();
 
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, court_id, status, courts(location_id)")
+    .select("id, court_id, status, courts(location_id, parent_court_id)")
     .eq("id", id)
     .single();
 
@@ -59,11 +66,42 @@ export async function PATCH(req: Request, { params }: Params) {
   if (conflicts && conflicts.length > 0)
     return NextResponse.json({ error: "slot_taken" }, { status: 409 });
 
+  // Parent/child conflict check — rescheduling into a slot already held by a
+  // related shared-space booking (parent ↔ child) must be blocked too.
+  const parentId = (booking.courts as unknown as { parent_court_id: string | null } | null)?.parent_court_id ?? null;
+  const conflictingCourtIds: string[] = [];
+  if (parentId) {
+    conflictingCourtIds.push(parentId);
+  } else {
+    const { data: children } = await supabase
+      .from("courts")
+      .select("id")
+      .eq("parent_court_id", booking.court_id);
+    if (children?.length) conflictingCourtIds.push(...children.map((c) => c.id));
+  }
+  if (conflictingCourtIds.length > 0) {
+    const { data: relatedConflicts } = await supabase
+      .from("bookings")
+      .select("id")
+      .in("court_id", conflictingCourtIds)
+      .eq("date", date)
+      .in("status", ["confirmed", "pending_payment"])
+      .lt("start_time", end_time)
+      .gt("end_time", start_time)
+      .limit(1);
+    if (relatedConflicts && relatedConflicts.length > 0)
+      return NextResponse.json({ error: "slot_taken" }, { status: 409 });
+  }
+
   const { error } = await supabase
     .from("bookings")
     .update({ date, start_time, end_time })
     .eq("id", id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (error.code === "23505")
+      return NextResponse.json({ error: "slot_taken" }, { status: 409 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

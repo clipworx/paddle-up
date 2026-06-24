@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { getAdminClaims } from "@/lib/server-auth";
 import { sendBookingNotification } from "@/lib/email";
+import { TIME_RE, DATE_RE, normEndTime } from "@/lib/bookingValidation";
 
 export async function POST(req: Request) {
   const claims = await getAdminClaims();
@@ -10,18 +11,28 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, notes } = body;
 
+  const nameStr = typeof booker_name === "string" ? booker_name.trim() : "";
+  const phoneStr = typeof booker_phone === "string" ? booker_phone.trim() : "";
   const emailStr = typeof booker_email === "string" ? booker_email.trim().toLowerCase() : "";
-  if (!court_id || !date || !start_time || !end_time || !booker_name?.trim() || !booker_phone?.trim() || !emailStr)
+  if (!court_id || !date || !start_time || !end_time || !nameStr || !phoneStr || !emailStr)
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr))
+  if (nameStr.length > 100)
+    return NextResponse.json({ error: "name_too_long" }, { status: 400 });
+  if (emailStr.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr))
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
+  if (!DATE_RE.test(date))
+    return NextResponse.json({ error: "date_invalid" }, { status: 400 });
+  if (!TIME_RE.test(start_time) || !TIME_RE.test(end_time))
+    return NextResponse.json({ error: "time_invalid" }, { status: 400 });
+  if (normEndTime(end_time) <= start_time)
+    return NextResponse.json({ error: "time_range_invalid" }, { status: 400 });
 
   const supabase = getAdminSupabase();
 
   // Fetch court + location for auth check and email
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, locations(name)")
+    .select("name, location_id, parent_court_id, locations(name)")
     .eq("id", court_id)
     .single();
 
@@ -56,6 +67,32 @@ export async function POST(req: Request) {
   if (conflicts && conflicts.length > 0)
     return NextResponse.json({ error: "slot_taken" }, { status: 409 });
 
+  // Parent/child conflict check — booking a parent blocks all its children; booking a child blocks the parent.
+  const parentId = courtRow?.parent_court_id ?? null;
+  const conflictingCourtIds: string[] = [];
+  if (parentId) {
+    conflictingCourtIds.push(parentId);
+  } else {
+    const { data: children } = await supabase
+      .from("courts")
+      .select("id")
+      .eq("parent_court_id", court_id);
+    if (children?.length) conflictingCourtIds.push(...children.map((c) => c.id));
+  }
+  if (conflictingCourtIds.length > 0) {
+    const { data: relatedConflicts } = await supabase
+      .from("bookings")
+      .select("id")
+      .in("court_id", conflictingCourtIds)
+      .eq("date", date)
+      .in("status", ["confirmed", "pending_payment"])
+      .lt("start_time", end_time)
+      .gt("end_time", start_time)
+      .limit(1);
+    if (relatedConflicts && relatedConflicts.length > 0)
+      return NextResponse.json({ error: "slot_taken" }, { status: 409 });
+  }
+
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -63,8 +100,8 @@ export async function POST(req: Request) {
       date,
       start_time,
       end_time,
-      booker_name: booker_name.trim(),
-      booker_phone: booker_phone.trim(),
+      booker_name: nameStr,
+      booker_phone: phoneStr,
       booker_email: emailStr,
       notes: notes?.trim() || null,
       player_count: 4,
@@ -73,7 +110,11 @@ export async function POST(req: Request) {
     .select("id")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (error.code === "23505")
+      return NextResponse.json({ error: "slot_taken" }, { status: 409 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   // Fire-and-forget: confirmation to booker + notification to location admin
   const loc = courtRow?.locations as unknown as { name: string } | null;
@@ -83,9 +124,9 @@ export async function POST(req: Request) {
     date,
     startTime: start_time,
     endTime: end_time,
-    bookerName: booker_name.trim(),
+    bookerName: nameStr,
     bookerEmail: emailStr,
-    playerCount: 0,
+    playerCount: 4,
     notes: notes?.trim() || null,
     status: "confirmed" as const,
     bookingId: data.id,
