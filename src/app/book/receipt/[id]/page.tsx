@@ -2,6 +2,7 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { BadgeCheck, Ban, Check, Clock, Upload } from "lucide-react";
 import { Logo } from "@/components/Logo";
 
 type ReceiptBooking = {
@@ -13,12 +14,24 @@ type ReceiptBooking = {
   status: "confirmed" | "cancelled" | "pending_payment" | "refunded";
   receipt_url: string | null;
   receipt_uploaded_at: string | null;
+  created_at: string;
   court_name: string | null;
   location_name: string | null;
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
 };
+
+const COURT_LINE_OVERLAY = {
+  backgroundImage:
+    "linear-gradient(transparent 48.5%, rgba(255,255,255,.28) 48.5%, rgba(255,255,255,.28) 51.5%, transparent 51.5%)," +
+    "linear-gradient(90deg, transparent 48.5%, rgba(255,255,255,.15) 48.5%, rgba(255,255,255,.15) 51.5%, transparent 51.5%)," +
+    "linear-gradient(transparent 23%, rgba(255,255,255,.18) 23%, rgba(255,255,255,.18) 24.5%, transparent 24.5%, transparent 75.5%, rgba(255,255,255,.18) 75.5%, rgba(255,255,255,.18) 77%, transparent 77%)",
+};
+
+function CourtSurface({ className }: { className?: string }) {
+  return <div className={`court-surface ${className ?? ""}`} style={COURT_LINE_OVERLAY} />;
+}
 
 function fmtTime(t: string): string {
   const [h, m] = t.split(":").map(Number);
@@ -33,6 +46,50 @@ function displayDate(iso: string): string {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
   });
 }
+
+function displayDateShort(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+  });
+}
+
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
+const STATUS_BANNER: Record<ReceiptBooking["status"], { wrap: string; icon: React.ReactNode; label: string; labelClass: string; body: string }> = {
+  pending_payment: {
+    wrap: "bg-amber-50 border-b-2 border-warning",
+    icon: <Clock size={18} className="text-warning shrink-0" />,
+    label: "Pending confirmation",
+    labelClass: "text-warning",
+    body: "Upload your receipt to confirm your booking.",
+  },
+  confirmed: {
+    wrap: "bg-accent/10 border-b-2 border-accent",
+    icon: <BadgeCheck size={18} className="text-accent shrink-0" />,
+    label: "Confirmed",
+    labelClass: "text-accent",
+    body: "Your booking is all set. See you there!",
+  },
+  cancelled: {
+    wrap: "bg-surface border-b-2 border-border",
+    icon: <Ban size={18} className="text-muted shrink-0" />,
+    label: "Cancelled",
+    labelClass: "text-muted",
+    body: "No receipt upload is needed for this booking.",
+  },
+  refunded: {
+    wrap: "bg-blue-50 border-b-2 border-info",
+    icon: <BadgeCheck size={18} className="text-info shrink-0" />,
+    label: "Refunded",
+    labelClass: "text-info",
+    body: "This booking has been refunded.",
+  },
+};
 
 export default function ReceiptUploadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -100,125 +157,213 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
     }
   }
 
+  const banner = booking ? STATUS_BANNER[booking.status] : null;
+  const showStepper = booking && (booking.status === "pending_payment" || booking.status === "confirmed");
+  const receiptUnderReview = !!booking?.receipt_url && booking.status === "pending_payment";
+  const confirmed = booking?.status === "confirmed";
+
   return (
     <div className="min-h-screen bg-surface">
       <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto max-w-lg w-full px-4 h-14 flex items-center gap-2">
+        <div className="mx-auto max-w-lg w-full px-4 h-14 flex items-center justify-center gap-2">
           <Link href="/book" className="flex items-center gap-2 shrink-0">
             <Logo size={28} />
-            <span className="text-[15px] font-extrabold text-foreground tracking-tight">
+            <span className="font-display text-[17px] font-bold uppercase tracking-widest text-foreground">
               Re<span className="text-accent">Z</span>erve
             </span>
           </Link>
         </div>
       </nav>
 
-      <main className="mx-auto max-w-lg w-full px-4 py-8">
-        {loading ? (
-          <p className="text-sm text-muted text-center py-12">Loading…</p>
-        ) : notFound || !booking ? (
-          <div className="rounded-2xl border border-border bg-background p-8 text-center shadow-sm">
+      {loading ? (
+        <p className="text-sm text-muted text-center py-12">Loading…</p>
+      ) : notFound || !booking || !banner ? (
+        <main className="mx-auto max-w-lg w-full px-4 py-8">
+          <div className="rounded-2xl bg-background p-8 text-center shadow-sm">
             <p className="text-sm font-semibold text-foreground">Booking not found</p>
             <p className="text-sm text-muted mt-1">Check the link and try again.</p>
           </div>
-        ) : (
-          <div className="space-y-5">
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Upload payment receipt</h1>
-              <p className="text-sm text-muted mt-1">
-                {booking.court_name} · {booking.location_name}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-background p-5 shadow-sm space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">Booking details</p>
-              <p className="font-semibold text-foreground text-sm">{displayDate(booking.date)}</p>
-              <p className="text-sm text-muted">{fmtTime(booking.start_time)} – {fmtTime(booking.end_time)}</p>
-              <p className="text-sm text-muted">Booked by {booking.booker_name}</p>
-              <p className="text-xs text-muted font-mono pt-1">Ref: {booking.id.slice(0, 8).toUpperCase()}</p>
-            </div>
-
-            {booking.status === "confirmed" && (
-              <div className="rounded-2xl border border-green-200 bg-green-50 p-5 text-center shadow-sm">
-                <p className="font-bold text-green-800 text-sm">Payment confirmed!</p>
-                <p className="text-sm text-green-700 mt-1">Your booking is all set. See you there!</p>
+        </main>
+      ) : (
+        <>
+          {/* Status banner */}
+          <div className={`${banner.wrap} px-4 py-3`}>
+            <div className="mx-auto max-w-lg flex items-center gap-2.5">
+              {banner.icon}
+              <div>
+                <div className={`font-op-mono text-[11px] font-bold tracking-widest ${banner.labelClass}`}>
+                  {banner.label.toUpperCase()}
+                </div>
+                <p className="text-xs text-muted mt-0.5">{banner.body}</p>
               </div>
-            )}
+            </div>
+          </div>
 
-            {(booking.status === "cancelled" || booking.status === "refunded") && (
-              <div className="rounded-2xl border border-border bg-background p-5 text-center shadow-sm">
-                <p className="font-semibold text-foreground text-sm">
+          <main className="mx-auto max-w-lg w-full px-4 py-6 space-y-4">
+            {/* Booking summary */}
+            <div className="rounded-2xl bg-background p-4 shadow-sm">
+              <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Booking summary</p>
+              <div className="flex items-center gap-3 mb-3">
+                <CourtSurface className="w-12 h-12 rounded-lg shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[15px] font-bold text-foreground truncate">{booking.court_name ?? "Court"}</p>
+                  <p className="text-sm text-muted truncate">{booking.location_name}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-surface px-2.5 py-2">
+                  <p className="font-op-mono text-[9px] text-muted uppercase tracking-widest">Date</p>
+                  <p className="text-[13px] font-semibold text-foreground mt-0.5">{displayDateShort(booking.date)}</p>
+                </div>
+                <div className="rounded-lg bg-surface px-2.5 py-2">
+                  <p className="font-op-mono text-[9px] text-muted uppercase tracking-widest">Time</p>
+                  <p className="text-[13px] font-semibold text-foreground mt-0.5">{fmtTime(booking.start_time)} – {fmtTime(booking.end_time)}</p>
+                </div>
+                <div className="rounded-lg bg-surface px-2.5 py-2">
+                  <p className="font-op-mono text-[9px] text-muted uppercase tracking-widest">Ref no.</p>
+                  <p className="font-op-mono text-[12px] font-bold text-foreground mt-0.5">{booking.id.slice(0, 8).toUpperCase()}</p>
+                </div>
+                <div className="rounded-lg bg-surface px-2.5 py-2">
+                  <p className="font-op-mono text-[9px] text-muted uppercase tracking-widest">Booked by</p>
+                  <p className="text-[13px] font-semibold text-foreground mt-0.5 truncate">{booking.booker_name}</p>
+                </div>
+              </div>
+            </div>
+
+            {booking.status === "cancelled" || booking.status === "refunded" ? (
+              <div className="rounded-2xl bg-background p-5 text-center shadow-sm">
+                <p className="font-semibold text-foreground text-sm">{displayDate(booking.date)}</p>
+                <p className="text-sm text-muted mt-1">
                   This booking was {booking.status === "cancelled" ? "cancelled" : "refunded"}.
                 </p>
-                <p className="text-sm text-muted mt-1">No receipt upload is needed.</p>
               </div>
-            )}
-
-            {booking.status === "pending_payment" && (
+            ) : (
               <>
-                {(booking.payment_qr_url) && (
-                  <div className="rounded-2xl border border-border bg-background p-5 shadow-sm flex flex-col items-center gap-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-muted self-start">Pay via QR</p>
+                {booking.payment_qr_url && (
+                  <div className="rounded-2xl bg-background p-5 shadow-sm flex flex-col items-center gap-3">
+                    <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest self-start">Pay via QR</p>
                     <img
                       src={booking.payment_qr_url}
                       alt="Payment QR code"
-                      className="w-40 h-40 object-contain rounded-xl border border-border"
+                      className="w-40 h-40 object-contain rounded-xl"
                     />
                     {(booking.payment_account_name || booking.payment_account_number) && (
                       <div className="text-center">
-                        {booking.payment_account_name && (
-                          <p className="font-semibold text-foreground text-sm">{booking.payment_account_name}</p>
-                        )}
                         {booking.payment_account_number && (
-                          <p className="text-sm text-muted">{booking.payment_account_number}</p>
+                          <p className="font-semibold text-foreground text-sm">{booking.payment_account_number}</p>
+                        )}
+                        {booking.payment_account_name && (
+                          <p className="text-sm text-muted">{booking.payment_account_name}</p>
                         )}
                       </div>
                     )}
                   </div>
                 )}
 
-                <div className="rounded-2xl border border-border bg-background p-5 shadow-sm space-y-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted">
-                    {booking.receipt_url ? "Replace receipt" : "Upload your payment receipt"}
-                  </p>
+                {booking.status === "pending_payment" && (
+                  <div className="rounded-2xl bg-background p-5 shadow-sm space-y-3">
+                    <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest">
+                      {booking.receipt_url ? "Replace receipt" : "Upload your payment receipt"}
+                    </p>
 
-                  {booking.receipt_url && !previewUrl && (
-                    <div className="flex items-center gap-3 rounded-xl bg-surface p-3">
-                      <img src={booking.receipt_url} alt="Uploaded receipt" className="w-16 h-16 object-cover rounded-lg border border-border" />
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">Receipt uploaded</p>
-                        <p className="text-xs text-muted">Waiting for the venue to confirm your payment.</p>
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="Receipt preview" className="w-full max-h-64 object-contain rounded-xl" />
+                    ) : booking.receipt_url ? (
+                      <div className="flex items-center gap-3 rounded-xl bg-surface p-3">
+                        <img src={booking.receipt_url} alt="Uploaded receipt" className="w-16 h-16 object-cover rounded-lg" />
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Receipt uploaded</p>
+                          <p className="text-xs text-muted">Waiting for the venue to confirm your payment.</p>
+                        </div>
                       </div>
+                    ) : (
+                      <label className="block border-2 border-dashed border-ink-300 rounded-2xl px-5 py-7 text-center cursor-pointer hover:border-accent/50 transition-colors">
+                        <input
+                          ref={fileRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+                          className="sr-only"
+                        />
+                        <div className="w-12 h-12 rounded-full bg-surface mx-auto mb-3 flex items-center justify-center">
+                          <Upload size={20} className="text-muted" />
+                        </div>
+                        <p className="text-sm font-bold text-foreground mb-1">Upload payment receipt</p>
+                        <p className="text-xs text-muted">Screenshot or photo of your payment confirmation</p>
+                        <span className="mt-3 inline-block rounded-full bg-surface px-4 py-2 text-xs font-bold text-foreground">Choose file</span>
+                      </label>
+                    )}
+
+                    {(previewUrl || booking.receipt_url) && !previewUrl ? (
+                      <label className="block text-center text-xs font-bold text-accent cursor-pointer hover:underline">
+                        Choose a different file
+                        <input
+                          ref={fileRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+                          className="sr-only"
+                        />
+                      </label>
+                    ) : null}
+
+                    {uploadError && <p className="text-sm text-negative">{uploadError}</p>}
+
+                    {previewUrl && (
+                      <button
+                        onClick={onUpload}
+                        disabled={!file || uploading}
+                        className="w-full rounded-full bg-accent text-white py-3 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm disabled:opacity-40"
+                      >
+                        {uploading ? "Uploading…" : booking.receipt_url ? "Upload new receipt" : "Upload receipt"}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Confirmation status stepper */}
+                {showStepper && (
+                  <div className="rounded-2xl bg-background p-5 shadow-sm">
+                    <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest mb-3.5">Confirmation status</p>
+                    <div className="space-y-2.5">
+                      <StepRow done label="Booking submitted" sub={fmtDateTime(booking.created_at)} />
+                      <StepRow
+                        done={confirmed}
+                        active={receiptUnderReview}
+                        label="Receipt under review"
+                        sub={booking.receipt_uploaded_at ? fmtDateTime(booking.receipt_uploaded_at) : "Usually within 1 hour"}
+                      />
+                      <StepRow done={confirmed} label="Booking confirmed" sub="You'll get an email confirmation" />
                     </div>
-                  )}
-
-                  {previewUrl && (
-                    <img src={previewUrl} alt="Receipt preview" className="w-full max-h-64 object-contain rounded-xl border border-border" />
-                  )}
-
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-                    className="w-full text-sm text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-accent/10 file:text-accent file:px-3 file:py-2 file:text-sm file:font-semibold"
-                  />
-
-                  {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
-
-                  <button
-                    onClick={onUpload}
-                    disabled={!file || uploading}
-                    className="w-full rounded-xl bg-accent text-background py-3 text-sm font-semibold hover:bg-muted transition-colors shadow-sm disabled:opacity-40"
-                  >
-                    {uploading ? "Uploading…" : booking.receipt_url ? "Upload new receipt" : "Upload receipt"}
-                  </button>
-                </div>
+                  </div>
+                )}
               </>
             )}
-          </div>
+          </main>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StepRow({ done, active, label, sub }: { done?: boolean; active?: boolean; label: string; sub: string }) {
+  return (
+    <div className={`flex items-center gap-2.5 ${!done && !active ? "opacity-40" : ""}`}>
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+        done ? "bg-accent" : active ? "bg-warning" : "bg-border"
+      }`}>
+        {done ? (
+          <Check size={14} className="text-white" />
+        ) : active ? (
+          <Clock size={14} className="text-white" />
+        ) : (
+          <BadgeCheck size={14} className="text-muted" />
         )}
-      </main>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-foreground">{label}</p>
+        <p className="font-op-mono text-[10px] text-muted mt-0.5">{sub}</p>
+      </div>
     </div>
   );
 }

@@ -195,3 +195,56 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Booking flow theme ──────────────────────────────────────────────────
+   Typography-only scope: the mockup's palette already matches the app's
+   light :root tokens (ink-900/500/400, accent, warning), so there's no
+   color override block here — just the font stack, plus the two literal
+   colors the mockup introduces for availability-grid slot states. */
+.book-theme {
+  font-family: var(--font-hanken), system-ui, sans-serif;
+}
+
+@theme {
+  --color-slot-booked:     #1e2428;
+  --color-slot-pending-bg: #fffbf2;
+}
+
+/* Availability grid cell states */
+.book-theme .slot-open {
+  background: var(--color-background);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+.book-theme .slot-open:hover {
+  background: var(--color-green-50);
+}
+.book-theme .slot-booked {
+  background: var(--color-slot-booked);
+}
+.book-theme .slot-pending {
+  background: var(--color-slot-pending-bg);
+  box-shadow: inset 3px 0 0 var(--color-warning);
+}
+.book-theme .slot-closed {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-ink-200) 0, var(--color-ink-200) 3px,
+    var(--color-ink-100) 3px, var(--color-ink-100) 9px
+  );
+}
+.book-theme .slot-past {
+  background: var(--color-ink-100);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* CSS-only court-surface placeholder, used when a venue has no photo —
+   keeps the domain's visual texture without relying on stock imagery. */
+.book-theme .court-surface {
+  background-color: #1a5c1a;
+  background-image:
+    linear-gradient(transparent 48.5%, rgba(255,255,255,.28) 48.5%, rgba(255,255,255,.28) 51.5%, transparent 51.5%),
+    linear-gradient(90deg, transparent 48.5%, rgba(255,255,255,.15) 48.5%, rgba(255,255,255,.15) 51.5%, transparent 51.5%),
+    linear-gradient(transparent 23%, rgba(255,255,255,.18) 23%, rgba(255,255,255,.18) 24.5%, transparent 24.5%,
+      transparent 75.5%, rgba(255,255,255,.18) 75.5%, rgba(255,255,255,.18) 77%, transparent 77%);
+}

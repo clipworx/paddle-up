@@ -93,7 +93,14 @@ export function clearTheme() {
 export function themeVarsStyle(themeKey: string | null): React.CSSProperties {
   const theme = THEMES.find((t) => t.key === themeKey);
   if (!theme) return {};
-  return Object.fromEntries(
-    CSS_KEYS.map((k) => [`--${k}`, theme.vars[k]])
-  ) as React.CSSProperties;
+  // Tailwind's @theme block resolves `--color-accent: var(--accent)` (and
+  // background/foreground/muted/surface/border) exactly once, on :root —
+  // that frozen value is what every `text-accent`/`bg-accent`/etc. utility
+  // actually consumes. Setting only the raw `--accent` here (applyTheme's
+  // approach, which mutates :root directly) never reaches a *descendant*
+  // element like a single card, so the --color-* vars need setting too.
+  return Object.fromEntries([
+    ...CSS_KEYS.map((k) => [`--${k}`, theme.vars[k]]),
+    ...CSS_KEYS.map((k) => [`--color-${k}`, `var(--${k})`]),
+  ]) as React.CSSProperties;
 }

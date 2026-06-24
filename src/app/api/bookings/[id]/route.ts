@@ -9,7 +9,7 @@ export async function GET(_req: Request, { params }: Params) {
   const supabase = getServerSupabase();
   const { data, error } = await supabase
     .from("bookings")
-    .select("id, date, start_time, end_time, booker_name, status, receipt_url, receipt_uploaded_at, courts(name, locations(name, payment_qr_url, payment_account_name, payment_account_number))")
+    .select("id, date, start_time, end_time, booker_name, status, receipt_url, receipt_uploaded_at, created_at, courts(name, locations(name, payment_qr_url, payment_account_name, payment_account_number))")
     .eq("id", id)
     .single();
 
@@ -29,6 +29,7 @@ export async function GET(_req: Request, { params }: Params) {
       status: data.status,
       receipt_url: data.receipt_url,
       receipt_uploaded_at: data.receipt_uploaded_at,
+      created_at: data.created_at,
       court_name: court?.name ?? null,
       location_name: court?.locations?.name ?? null,
       payment_qr_url: court?.locations?.payment_qr_url ?? null,
