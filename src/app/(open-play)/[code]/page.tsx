@@ -4,21 +4,21 @@ import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EditLock } from "@/components/EditLock";
-import { Logo } from "@/components/Logo";
 import { JoinGate } from "@/components/JoinGate";
 import { WaitingRoom } from "@/components/WaitingRoom";
 import { PendingRequests } from "@/components/PendingRequests";
 import { MyStatusCard } from "@/components/MyStatusCard";
 import { RosterList } from "@/components/RosterList";
-import { QueueList } from "@/components/QueueList";
-import { JoinQrCode } from "@/components/JoinQrCode";
+import { TierQueueCard } from "@/components/open-play/TierQueueCard";
+import { KoBanner } from "@/components/open-play/KoBanner";
 import { CourtCard } from "@/components/CourtCard";
 import { HostPanel } from "@/components/HostPanel";
 import { useNotifications } from "@/components/Notifications";
 import { useSharedState, getStoredPassword } from "@/lib/sharedState";
 import { getStoredIdentity, setStoredIdentity, generatePlayerId } from "@/lib/playerIdentity";
 import { applySetCourtCount, applyKickPlayer, applyAdmit, applyDecline, applyCompleteMatch } from "@/lib/sessionTransitions";
-import { Tier, MAX_COURTS } from "@/lib/types";
+import { queuedInTier } from "@/lib/openPlayDisplay";
+import { Tier, TIERS, MAX_COURTS } from "@/lib/types";
 
 export default function SessionPage({
   params,
@@ -35,6 +35,7 @@ export default function SessionPage({
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showKO, setShowKO] = useState(false);
   // A synchronous localStorage read, not a side effect — computing it here
   // (rather than in the effect below) means we know on the very first render
   // whether there's an identity to restore, so the render logic never has to
@@ -153,10 +154,17 @@ export default function SessionPage({
   };
 
   const handleCompleteMatch = (courtIndex: number) => {
+    let succeeded = false;
     setState((s) => {
       const result = applyCompleteMatch(s, courtIndex);
-      return "error" in result ? s : result;
+      if ("error" in result) return s;
+      succeeded = true;
+      return result;
     });
+    if (succeeded) {
+      setShowKO(true);
+      setTimeout(() => setShowKO(false), 2800);
+    }
   };
 
   const handleSetCourtCount = (n: number) => {
@@ -193,108 +201,81 @@ export default function SessionPage({
     }
   };
 
-  if (hydrated && !exists) {
-    return (
-      <main className="mx-auto max-w-xl w-full px-4 py-16 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-foreground">Session not found</h1>
-        <p className="text-sm text-muted">
-          No open play exists with code{" "}
-          <span className="font-mono font-semibold text-foreground">{normalized}</span>.
-        </p>
-        <Link
-          href="/play"
-          className="inline-block rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors"
-        >
-          Back to start
-        </Link>
-      </main>
-    );
-  }
+  let content: React.ReactNode;
 
   if (!hydrated || (storedIdentity && !playerId)) {
     // Either the session state hasn't loaded yet, or we have a stored
-    // identity that's still being confirmed with the server — in both
-    // cases, don't flash the JoinGate.
-    return <main className="mx-auto max-w-xl w-full px-4 py-16 text-center text-sm text-muted">Loading…</main>;
-  }
-
-  if (!playerId) {
-    return <JoinGate busy={joining} onSubmit={handleJoinGateSubmit} />;
-  }
-
-  if (!myPlayer) {
+    // identity that's still being confirmed with the server — don't flash
+    // the JoinGate in either case.
+    content = <p className="text-center text-sm text-muted py-16">Loading…</p>;
+  } else if (!exists) {
+    content = (
+      <div className="text-center py-16">
+        <div className="font-display italic font-black text-[44px] text-negative mb-2.5 leading-tight">
+          SESSION NOT FOUND
+        </div>
+        <div className="text-muted text-[15px] mb-7">
+          No session with code{" "}
+          <span className="text-foreground font-op-mono text-[13px]">{normalized}</span>
+        </div>
+        <Link
+          href="/play"
+          className="inline-block bg-surface text-foreground px-7 py-3 rounded-lg text-sm font-semibold border border-border hover:border-accent/40 transition-colors"
+        >
+          ← Back to home
+        </Link>
+      </div>
+    );
+  } else if (!playerId) {
+    content = <JoinGate code={normalized} busy={joining} onSubmit={handleJoinGateSubmit} />;
+  } else if (!myPlayer) {
     // Identity restored from localStorage but the roster hasn't caught up
     // yet (join request in flight / realtime still propagating).
-    return <main className="mx-auto max-w-xl w-full px-4 py-16 text-center text-sm text-muted">Loading…</main>;
-  }
+    content = <p className="text-center text-sm text-muted py-16">Loading…</p>;
+  } else if (myPlayer.status !== "admitted") {
+    content = (
+      <WaitingRoom name={myPlayer.name} status={myPlayer.status} busy={busy} onRetry={handleRetryJoin} />
+    );
+  } else {
+    const myQueuePosition =
+      myPlayer.tier && myPlayer.joined
+        ? queuedInTier(state.players, myPlayer.tier).findIndex((p) => p.id === playerId) + 1
+        : 0;
+    const hasActiveCourts = state.courts.some((m) => m !== null);
 
-  if (myPlayer.status !== "admitted") {
-    return <WaitingRoom status={myPlayer.status} busy={busy} onRetry={handleRetryJoin} />;
-  }
+    content = (
+      <>
+        <MyStatusCard
+          code={normalized}
+          player={myPlayer}
+          busy={busy}
+          myQueuePosition={myQueuePosition}
+          onRename={handleRename}
+          onSetTier={handleSetTier}
+          onJoinQueue={handleJoinQueue}
+          onLeaveQueue={handleLeaveQueue}
+        />
 
-  return (
-    <>
-      <nav className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
-        <div className="mx-auto max-w-6xl w-full px-4 h-14 flex items-center gap-4">
-          <Link href="/play" className="flex items-center gap-2 shrink-0 mr-2">
-            <Logo size={28} />
-            <span className="text-sm font-bold text-foreground hidden sm:block">ReZerve</span>
-          </Link>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-sm text-muted hidden sm:inline">Session</span>
-            <span className="font-mono font-semibold text-accent text-sm truncate">{normalized}</span>
-            <span className="text-border hidden sm:inline mx-1">·</span>
-            <Link
-              href={`/${normalized}/live`}
-              className="text-xs text-muted hover:text-accent transition-colors shrink-0"
-            >
-              <span className="hidden sm:inline">Live view →</span>
-              <span className="sm:hidden">Live →</span>
-            </Link>
-          </div>
-          <div className="shrink-0">
-            <EditLock isEditor={isEditor} onAuthenticate={authenticate} onLogout={logout} />
-          </div>
-        </div>
-      </nav>
+        {isEditor && (
+          <PendingRequests players={state.players} onAdmit={handleAdmit} onDecline={handleDecline} />
+        )}
 
-      <main className="mx-auto max-w-6xl w-full px-4 py-8 space-y-6">
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-6">
-            <MyStatusCard
-              player={myPlayer}
-              busy={busy}
-              onRename={handleRename}
-              onSetTier={handleSetTier}
-              onJoinQueue={handleJoinQueue}
-              onLeaveQueue={handleLeaveQueue}
-            />
-            {isEditor ? (
-              <>
-                <JoinQrCode code={normalized} />
-                <PendingRequests players={state.players} onAdmit={handleAdmit} onDecline={handleDecline} />
-                <HostPanel
-                  courtCount={state.courtCount}
-                  onSetCourtCount={handleSetCourtCount}
-                  onEndSession={handleEndSession}
-                />
-                <RosterList
-                  players={state.players.filter((p) => p.status === "admitted")}
-                  myId={playerId}
-                  isEditor={isEditor}
-                  onKick={handleKick}
-                />
-              </>
-            ) : (
-              <QueueList players={state.players} myId={playerId} />
-            )}
-          </div>
+        {isEditor && (
+          <HostPanel
+            code={normalized}
+            courtCount={state.courtCount}
+            onSetCourtCount={handleSetCourtCount}
+            onEndSession={handleEndSession}
+          />
+        )}
 
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            {state.courts
-              .map((match, i) => ({ match, i }))
-              .filter(({ match }) => isEditor || match !== null)
-              .map(({ match, i }) => (
+        {hasActiveCourts && (
+          <div>
+            <div className="font-op-mono text-[9px] text-muted tracking-[0.18em] mb-2.25 pl-0.5">
+              ACTIVE COURTS
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {state.courts.map((match, i) => (
                 <CourtCard
                   key={i}
                   code={normalized}
@@ -306,11 +287,58 @@ export default function SessionPage({
                   onComplete={() => handleCompleteMatch(i)}
                 />
               ))}
-            {!isEditor && state.courts.every((c) => c === null) && (
-              <p className="text-sm text-muted sm:col-span-2 text-center py-8">No matches in progress right now.</p>
-            )}
+            </div>
+          </div>
+        )}
+
+        {TIERS.map((tier) => (
+          <TierQueueCard
+            key={tier}
+            tier={tier}
+            players={state.players}
+            myId={playerId}
+            isEditor={isEditor}
+            onKick={handleKick}
+          />
+        ))}
+
+        {isEditor && <RosterList players={state.players} myId={playerId} onKick={handleKick} />}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <KoBanner show={showKO} />
+      <nav className="sticky top-0 z-40 bg-background/97 backdrop-blur-md border-b border-border">
+        <div className="px-4.5 py-2.5 flex items-center gap-3">
+          <Link
+            href="/play"
+            aria-label="Home"
+            className="text-muted text-[22px] leading-none px-1.5 py-1 rounded-md hover:text-foreground transition-colors"
+          >
+            ←
+          </Link>
+          <div className="flex-1 min-w-0">
+            <div className="font-op-mono text-[9px] text-muted tracking-[0.18em]">SESSION</div>
+            <div className="font-op-mono text-[21px] font-bold text-accent tracking-[0.16em] leading-tight truncate">
+              {normalized}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href={`/${normalized}/live`}
+              className="font-op-mono text-[9px] text-muted tracking-widest px-3 py-1.75 border border-border rounded-md hover:text-foreground hover:border-foreground/30 transition-colors whitespace-nowrap"
+            >
+              LIVE ↗
+            </Link>
+            <EditLock isEditor={isEditor} onAuthenticate={authenticate} onLogout={logout} />
           </div>
         </div>
+      </nav>
+
+      <main className="max-w-145 w-full mx-auto px-4 py-3.5 pb-22 flex flex-col gap-3.5">
+        {content}
       </main>
     </>
   );

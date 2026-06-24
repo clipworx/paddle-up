@@ -33,7 +33,7 @@ export function EditLock({ isEditor, onAuthenticate, onLogout }: Props) {
       <button
         type="button"
         onClick={onLogout}
-        className="text-xs font-semibold rounded-full px-3 py-1.5 border border-accent bg-accent text-background hover:bg-muted hover:border-muted transition-colors"
+        className="text-xs font-semibold rounded-full px-3 py-1.5 border border-accent bg-accent text-white hover:bg-muted hover:border-muted transition-colors"
         title="Sign out of edit mode"
       >
         🔓 Editing
@@ -81,7 +81,7 @@ export function EditLock({ isEditor, onAuthenticate, onLogout }: Props) {
             <button
               type="submit"
               disabled={busy || !password}
-              className="text-xs rounded px-3 py-1.5 bg-accent text-background font-semibold hover:bg-muted transition-colors disabled:opacity-40 disabled:hover:bg-accent"
+              className="text-xs rounded px-3 py-1.5 bg-accent text-white font-semibold hover:bg-muted transition-colors disabled:opacity-40 disabled:hover:bg-accent"
             >
               {busy ? "Checking…" : "Unlock"}
             </button>

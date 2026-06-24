@@ -2,6 +2,24 @@ import { AppState, Match, Player, Tier, TIERS } from "./types";
 
 export type Transition = AppState | { error: string };
 
+// Defensively reshapes whatever is in the DB row into a valid AppState.
+// Needed because sessions created before the Open Play rewrite (or any
+// future shape change) won't have a `courts` array at all — every
+// transition below indexes into `courts`, so skipping this crashes on the
+// very first action against a stale session. Both the server (sessionCas)
+// and client (sharedState) paths must call this on the raw value they read.
+export function normalizeAppState(raw: unknown): AppState {
+  const parsed = (raw && typeof raw === "object" ? raw : {}) as Partial<AppState>;
+  const courtCount = Math.max(1, parsed.courtCount ?? 1);
+  const courts = Array.isArray(parsed.courts) ? [...parsed.courts] : [];
+  while (courts.length < courtCount) courts.push(null);
+  return {
+    players: Array.isArray(parsed.players) ? parsed.players : [],
+    courtCount,
+    courts: courts.slice(0, courtCount),
+  };
+}
+
 function findPlayer(state: AppState, playerId: string): Player | undefined {
   return state.players.find((p) => p.id === playerId);
 }

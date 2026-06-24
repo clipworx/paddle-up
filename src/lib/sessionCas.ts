@@ -1,6 +1,6 @@
 import { getServerSupabase } from "./supabase-server";
 import { AppState } from "./types";
-import { Transition } from "./sessionTransitions";
+import { Transition, normalizeAppState } from "./sessionTransitions";
 
 export type CasResult =
   | { ok: true; state: AppState; version: number }
@@ -27,7 +27,7 @@ export async function casUpdate(
     if (readErr) return { ok: false, error: readErr.message, status: 500 };
     if (!row) return { ok: false, error: "session_not_found", status: 404 };
 
-    const result = transition(row.state as AppState);
+    const result = transition(normalizeAppState(row.state));
     if ("error" in result) {
       const status = result.error === "player_not_found" ? 404 : 400;
       return { ok: false, error: result.error, status };

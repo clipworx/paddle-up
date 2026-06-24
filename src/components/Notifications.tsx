@@ -168,7 +168,7 @@ function ConfirmDialog({
             type="button"
             onClick={() => onResolve(true)}
             autoFocus
-            className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors"
+            className="rounded-lg bg-accent text-white px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors"
           >
             {confirmLabel}
           </button>
@@ -249,7 +249,7 @@ function ToastItem({
     >
       <span className="inline-flex items-center gap-2">
         <span
-          className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-accent text-background text-[11px] font-bold"
+          className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-accent text-white text-[11px] font-bold"
           aria-hidden="true"
         >
           {iconFor(toast.type)}

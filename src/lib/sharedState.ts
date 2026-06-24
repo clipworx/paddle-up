@@ -3,18 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import { AppState, INITIAL_STATE } from "./types";
-
-function normalizeState(raw: unknown): AppState {
-  if (!raw || typeof raw !== "object") return INITIAL_STATE;
-  const parsed = raw as Partial<AppState>;
-  const merged: AppState = { ...INITIAL_STATE, ...parsed };
-  const desired = Math.max(1, merged.courtCount ?? 1);
-  const courts = Array.isArray(parsed.courts) ? [...parsed.courts] : [];
-  while (courts.length < desired) courts.push(null);
-  merged.courts = courts.slice(0, desired);
-  merged.players = Array.isArray(parsed.players) ? parsed.players : [];
-  return merged;
-}
+import { normalizeAppState } from "./sessionTransitions";
 
 const PASSWORD_KEY_PREFIX = "paddle-up-edit-pw-v1:";
 
@@ -133,7 +122,7 @@ export function useSharedState(code: string): SharedState {
 
   const mergeState = useCallback((incoming: unknown) => {
     if (!incoming || typeof incoming !== "object") return;
-    setLocalState(normalizeState(incoming));
+    setLocalState(normalizeAppState(incoming));
   }, []);
 
   const refetch = useCallback(async () => {

@@ -1,88 +1,51 @@
 "use client";
 
-import { Player, Tier } from "@/lib/types";
-
-const TIER_LABELS: Record<Tier, string> = {
-  novice: "Novice",
-  intermediate: "Intermediate",
-};
+import { Player } from "@/lib/types";
+import { TIER_LABEL, TIER_TEXT_CLASS, TIER_BG_CLASS } from "@/lib/openPlayDisplay";
 
 type Props = {
   players: Player[];
   myId: string | null;
-  isEditor: boolean;
-  onKick?: (id: string) => void;
+  onKick: (id: string) => void;
 };
 
-function Row({ player, myId, isEditor, onKick, suffix }: {
-  player: Player; myId: string | null; isEditor: boolean; onKick?: (id: string) => void; suffix?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 py-1.5">
-      <span className="text-sm text-foreground">
-        {player.name}
-        {player.id === myId && <span className="text-muted"> (you)</span>}
-        {suffix && <span className="text-xs text-muted ml-1.5">{suffix}</span>}
-      </span>
-      {isEditor && player.id !== myId && onKick && (
-        <button
-          onClick={() => onKick(player.id)}
-          className="text-xs text-muted hover:text-accent transition-colors shrink-0"
-        >
-          Kick
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function RosterList({ players, myId, isEditor, onKick }: Props) {
-  const playing = players.filter((p) => p.inMatchOnCourt !== null);
-  const queued = (tier: Tier) => players.filter((p) => p.inMatchOnCourt === null && p.joined && p.tier === tier);
-  const resting = players.filter((p) => p.inMatchOnCourt === null && !p.joined);
+// Host-only: shows admitted players who are neither queued nor playing.
+// Queued/playing players live in TierQueueCard/CourtCard instead.
+export function RosterList({ players, myId, onKick }: Props) {
+  const resting = players.filter((p) => p.status === "admitted" && p.inMatchOnCourt === null && !p.joined);
+  if (resting.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-border bg-background p-5 shadow-sm space-y-4">
-      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted">
-        Players ({players.length})
-      </h3>
-
-      {playing.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-foreground mb-1">Playing</p>
-          <div className="divide-y divide-border/50">
-            {playing.map((p) => (
-              <Row key={p.id} player={p} myId={myId} isEditor={isEditor} onKick={onKick} suffix={`Court ${p.inMatchOnCourt! + 1}`} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(["novice", "intermediate"] as Tier[]).map((tier) => {
-        const list = queued(tier);
-        if (list.length === 0) return null;
-        return (
-          <div key={tier}>
-            <p className="text-xs font-semibold text-foreground mb-1">{TIER_LABELS[tier]} queue ({list.length})</p>
-            <div className="divide-y divide-border/50">
-              {list.map((p) => <Row key={p.id} player={p} myId={myId} isEditor={isEditor} onKick={onKick} />)}
+    <div className="bg-background border border-border rounded-xl overflow-hidden">
+      <div className="px-4 py-2.25 border-b border-border">
+        <div className="font-op-mono text-[9px] text-muted tracking-[0.17em]">RESTING</div>
+      </div>
+      <div>
+        {resting.map((p) => {
+          const isMe = p.id === myId;
+          const tier = p.tier ?? "novice";
+          return (
+            <div key={p.id} className="flex items-center gap-2.5 px-4 py-2.5 border-b border-border/60 last:border-b-0">
+              <div className="flex-1 min-w-0">
+                <div className={`font-semibold text-[15px] truncate ${isMe ? "text-accent" : "text-foreground"}`}>
+                  {p.name}
+                </div>
+                <div className={`inline-flex mt-1 px-2 py-0.5 rounded-sm font-op-mono text-[8px] tracking-[0.12em] ${TIER_BG_CLASS[tier]} ${TIER_TEXT_CLASS[tier]}`}>
+                  {TIER_LABEL[tier]}
+                </div>
+              </div>
+              {!isMe && (
+                <button
+                  onClick={() => onKick(p.id)}
+                  className="text-[11px] text-muted px-2.25 py-1.25 rounded-md border border-border hover:border-foreground/30 hover:text-foreground transition-colors shrink-0"
+                >
+                  Kick
+                </button>
+              )}
             </div>
-          </div>
-        );
-      })}
-
-      {resting.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted mb-1">Resting</p>
-          <div className="divide-y divide-border/50">
-            {resting.map((p) => (
-              <Row key={p.id} player={p} myId={myId} isEditor={isEditor} onKick={onKick} suffix={p.tier ? TIER_LABELS[p.tier] : undefined} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {players.length === 0 && <p className="text-sm text-muted">No one has joined yet.</p>}
+          );
+        })}
+      </div>
     </div>
   );
 }

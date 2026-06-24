@@ -122,3 +122,76 @@ body {
 .leaflet-control-container {
   z-index: 10;
 }
+
+/* ── Open Play dark theme ──────────────────────────────────────────────────
+   Scoped override of the same semantic tokens the rest of the app already
+   uses (bg-background, text-foreground, border-border, etc.) — components
+   don't need color-class changes, just to render inside this wrapper. */
+.op-theme {
+  --background: #141b24;
+  --foreground: #e8ede8;
+  --muted:      #6b7a8b;
+  --surface:    #0b0f14;
+  --border:     rgba(255, 255, 255, 0.07);
+
+  /* Tailwind's @theme block resolves `--color-foreground: var(--foreground)`
+     (and background/muted/surface/border) exactly once, on :root — that
+     frozen value is what every `text-foreground`/`bg-background`/etc.
+     utility actually consumes, so redeclaring only the raw tokens above
+     never reaches them. Redeclare the consumed --color-* vars directly so
+     they re-resolve against this element's own tokens instead. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted:      var(--muted);
+  --color-surface:    var(--surface);
+  --color-border:     var(--border);
+
+  background: var(--surface);
+  color: var(--foreground);
+  font-family: var(--font-hanken), system-ui, sans-serif;
+  /* Tells the browser to render native form-control chrome (autofill
+     backgrounds, focus rings, etc.) as dark instead of assuming light. */
+  color-scheme: dark;
+}
+
+/* Browsers force their own light background + dark text on autofilled
+   inputs, ignoring normal background-color/color — only this combo
+   (inset box-shadow + -webkit-text-fill-color) can override it. */
+.op-theme input:-webkit-autofill,
+.op-theme input:-webkit-autofill:hover,
+.op-theme input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--foreground);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset;
+  box-shadow: 0 0 0 1000px var(--surface) inset;
+  caret-color: var(--foreground);
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+@theme {
+  --font-display:  var(--font-barlow);
+  --font-op-mono:  var(--font-space-mono);
+}
+
+@keyframes op-fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes op-koSlam {
+  0%   { transform: scale(0.65) skewX(-3deg); opacity: 0; }
+  55%  { transform: scale(1.05) skewX(0); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes op-koBg {
+  0%, 100% { background: rgba(0, 0, 0, 0.88); }
+  35%, 65% { background: rgba(28, 0, 0, 0.94); }
+}
+@keyframes op-livePulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .op-theme * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
