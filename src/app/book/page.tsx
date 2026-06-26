@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { MapPin, Megaphone, Volleyball } from "lucide-react";
+import { CalendarDays, MapPin, Megaphone, Volleyball } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
 import { useNotifications } from "@/components/Notifications";
@@ -365,6 +365,119 @@ function LocationPicker({
   );
 }
 
+// ─── Month calendar picker ─────────────────────────────────────────────────────
+
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+
+// Weeks of cells for a given month; `null` cells pad out the leading/trailing days.
+function getMonthGrid(year: number, month: number): (Date | null)[][] {
+  const startDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = Array(startDow).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks: (Date | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+function MonthCalendar({
+  selected,
+  minDate,
+  onSelect,
+  onClose,
+}: {
+  selected: string;
+  minDate: string;
+  onSelect: (iso: string) => void;
+  onClose: () => void;
+}) {
+  const [view, setView] = useState(() => {
+    const [y, m] = selected.split("-").map(Number);
+    return { year: y, month: m - 1 };
+  });
+
+  const weeks = getMonthGrid(view.year, view.month);
+  const monthLabel = new Date(view.year, view.month, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  function changeMonth(delta: number) {
+    setView((v) => {
+      const d = new Date(v.year, v.month + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() };
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xs rounded-t-2xl sm:rounded-2xl border border-border bg-background shadow-2xl p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <button
+            type="button"
+            onClick={() => changeMonth(-1)}
+            className="rounded-full border border-border w-8 h-8 flex items-center justify-center text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+          >
+            ‹
+          </button>
+          <span className="text-sm font-bold text-foreground">{monthLabel}</span>
+          <button
+            type="button"
+            onClick={() => changeMonth(1)}
+            className="rounded-full border border-border w-8 h-8 flex items-center justify-center text-foreground hover:border-accent hover:bg-accent/5 transition-colors"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {WEEKDAY_LABELS.map((d, i) => (
+            <div key={i} className="text-center font-op-mono text-[9px] font-bold text-muted uppercase">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-1">
+          {weeks.flat().map((d, i) => {
+            if (!d) return <div key={i} />;
+            const iso = formatDate(d);
+            const isSelected = iso === selected;
+            const isToday = iso === formatDate(new Date());
+            const disabled = iso < minDate;
+            return (
+              <button
+                key={i}
+                type="button"
+                disabled={disabled}
+                onClick={() => { onSelect(iso); onClose(); }}
+                className={`h-9 rounded-lg text-sm font-semibold transition-colors ${
+                  isSelected
+                    ? "bg-accent text-white"
+                    : disabled
+                    ? "text-muted/40 cursor-default"
+                    : isToday
+                    ? "text-accent border border-accent/40 hover:bg-accent/10"
+                    : "text-foreground hover:bg-surface"
+                }`}
+              >
+                {d.getDate()}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
@@ -382,6 +495,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [form, setForm] = useState<BookingForm>({
     court_id: "",
     startIdx: 0,
@@ -1206,20 +1320,19 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 >
                   ‹
                 </button>
-                <div className="relative text-center min-w-28 select-none">
-                  <div className="text-[14px] font-bold text-foreground leading-tight whitespace-nowrap">{displayDateCompact(date)}</div>
-                  <span className="font-op-mono text-[10px] font-bold text-accent tracking-[0.08em]">
-                    {date === today ? "TODAY" : ""}
+                <button
+                  type="button"
+                  onClick={() => setShowCalendar(true)}
+                  className="flex items-center gap-2 rounded-full border border-border bg-surface pl-3 pr-3.5 h-9 select-none hover:border-accent hover:bg-accent/5 transition-colors shrink-0"
+                >
+                  <CalendarDays size={15} className="text-accent shrink-0" />
+                  <span className="text-left">
+                    <span className="block text-[13px] font-bold text-foreground leading-tight whitespace-nowrap">{displayDateCompact(date)}</span>
+                    {date === today && (
+                      <span className="block font-op-mono text-[9px] font-bold text-accent tracking-[0.08em]">TODAY</span>
+                    )}
                   </span>
-                  <input
-                    type="date"
-                    value={date}
-                    min={today}
-                    onChange={(e) => setDate(e.target.value)}
-                    aria-label="Pick a date"
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
-                </div>
+                </button>
                 <button
                   onClick={nextDay}
                   className="rounded-full border border-border w-9 h-9 flex items-center justify-center text-foreground hover:border-accent hover:bg-accent/5 transition-colors shrink-0"
@@ -1817,6 +1930,16 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
             </a>
           </div>
         </div>
+      )}
+
+      {/* Month calendar picker */}
+      {showCalendar && (
+        <MonthCalendar
+          selected={date}
+          minDate={today}
+          onSelect={setDate}
+          onClose={() => setShowCalendar(false)}
+        />
       )}
     </div>
   );
