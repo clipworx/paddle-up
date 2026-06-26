@@ -81,7 +81,7 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown };
+  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown; auto_expire_pending_payment?: unknown; pending_payment_expiry_hours?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -106,6 +106,12 @@ export async function PUT(req: Request, { params }: Params) {
   const downpayment_min_hours  = typeof body.downpayment_min_hours  === "number"  ? body.downpayment_min_hours  : undefined;
   const no_split_rate_booking  = typeof body.no_split_rate_booking  === "boolean" ? body.no_split_rate_booking  : undefined;
   const allow_half_hour_bookings = typeof body.allow_half_hour_bookings === "boolean" ? body.allow_half_hour_bookings : undefined;
+  const auto_expire_pending_payment  = typeof body.auto_expire_pending_payment  === "boolean" ? body.auto_expire_pending_payment  : undefined;
+  const pending_payment_expiry_hours = typeof body.pending_payment_expiry_hours === "number"  ? body.pending_payment_expiry_hours : undefined;
+
+  if (pending_payment_expiry_hours !== undefined && (pending_payment_expiry_hours < 1 || pending_payment_expiry_hours > 72)) {
+    return NextResponse.json({ error: "invalid_expiry_hours" }, { status: 400 });
+  }
 
   const updates: Record<string, unknown> = {};
   if (name !== null) updates.name = name;
@@ -118,6 +124,8 @@ export async function PUT(req: Request, { params }: Params) {
   if (downpayment_min_hours !== undefined) updates.downpayment_min_hours = downpayment_min_hours;
   if (no_split_rate_booking    !== undefined) updates.no_split_rate_booking    = no_split_rate_booking;
   if (allow_half_hour_bookings !== undefined) updates.allow_half_hour_bookings = allow_half_hour_bookings;
+  if (auto_expire_pending_payment  !== undefined) updates.auto_expire_pending_payment  = auto_expire_pending_payment;
+  if (pending_payment_expiry_hours !== undefined) updates.pending_payment_expiry_hours = pending_payment_expiry_hours;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

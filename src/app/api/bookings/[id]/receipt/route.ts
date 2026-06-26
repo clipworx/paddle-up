@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: Params) {
   if (!booking) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  if (booking.status !== "pending_payment") {
+  if (booking.status !== "pending_payment" && booking.status !== "pending_confirmation") {
     return NextResponse.json({ error: "not_pending" }, { status: 409 });
   }
 
@@ -60,7 +60,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const { error: updateError } = await supabase
     .from("bookings")
-    .update({ receipt_url: versionedUrl, receipt_uploaded_at: new Date().toISOString() })
+    .update({ receipt_url: versionedUrl, receipt_uploaded_at: new Date().toISOString(), status: "pending_confirmation" })
     .eq("id", id);
 
   if (updateError) {

@@ -13,11 +13,16 @@ export async function GET(req: Request) {
   }
 
   const supabase = getServerSupabase();
+  // Opportunistically expire any unpaid bookings past their location's
+  // threshold before reading — no cron in this app, so this is what keeps
+  // stale pending_payment rows from holding their slot indefinitely.
+  await supabase.rpc("expire_pending_bookings");
+
   const { data, error } = await supabase
     .from("bookings")
     .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, created_at")
     .eq("date", date)
-    .in("status", ["confirmed", "pending_payment"])
+    .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
     .order("start_time");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -99,7 +104,7 @@ export async function POST(req: Request) {
   // Fetch court + location info; verify location is active and subscription is valid
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, is_active, parent_court_id, custom_rate_unit, custom_day_rate, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking)")
+    .select("name, location_id, is_active, parent_court_id, custom_rate_unit, custom_day_rate, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking, auto_expire_pending_payment, pending_payment_expiry_hours)")
     .eq("id", court_id)
     .single();
 
@@ -123,6 +128,8 @@ export async function POST(req: Request) {
     require_downpayment: boolean;
     downpayment_min_hours: number;
     no_split_rate_booking: boolean;
+    auto_expire_pending_payment: boolean;
+    pending_payment_expiry_hours: number;
   } | null;
 
   if (!courtRow?.is_active || !loc?.is_active) {
@@ -205,7 +212,7 @@ export async function POST(req: Request) {
       .select("id")
       .in("court_id", conflictingCourtIds)
       .eq("date", date)
-      .in("status", ["confirmed", "pending_payment"])
+      .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
       .lt("start_time", end_time)
       .gt("end_time", start_time)
       .limit(1);
@@ -291,5 +298,6 @@ export async function POST(req: Request) {
     payment_account_number: loc?.payment_account_number ?? null,
     requires_downpayment: requiresDownpayment,
     downpayment_min_hours: loc?.downpayment_min_hours ?? 3,
+    pending_payment_expiry_hours: requiresPayment && loc?.auto_expire_pending_payment ? loc.pending_payment_expiry_hours : null,
   }, { status: 201 });
 }

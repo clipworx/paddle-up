@@ -20,16 +20,18 @@ function fmtSlotTime(hhmm: string): string {
 }
 
 const STATUS_STYLES: Record<BookingStatus, string> = {
-  confirmed:       "bg-green-100 text-green-700",
-  pending_payment: "bg-yellow-100 text-yellow-700",
-  cancelled:       "bg-gray-100 text-gray-500",
-  refunded:        "bg-blue-100 text-blue-600",
+  confirmed:             "bg-green-100 text-green-700",
+  pending_payment:       "bg-yellow-100 text-yellow-700",
+  pending_confirmation:  "bg-violet-100 text-violet-700",
+  cancelled:             "bg-gray-100 text-gray-500",
+  refunded:              "bg-blue-100 text-blue-600",
 };
 const STATUS_LABELS: Record<BookingStatus, string> = {
-  confirmed:       "Confirmed",
-  pending_payment: "Pending",
-  cancelled:       "Cancelled",
-  refunded:        "Refunded",
+  confirmed:             "Confirmed",
+  pending_payment:       "Pending",
+  pending_confirmation:  "Awaiting Review",
+  cancelled:             "Cancelled",
+  refunded:              "Refunded",
 };
 function StatusBadge({ status }: { status: BookingStatus }) {
   return (
@@ -80,6 +82,7 @@ export default function BookingsPage() {
   const [blockForm, setBlockForm] = useState<{
     court_ids: string[]; all_courts: boolean;
     start_date: string; end_date: string; start_hour: number; end_hour: number; reason: string;
+    is_open_play: boolean;
   } | null>(null);
   const [blockSubmitting, setBlockSubmitting] = useState(false);
   const [blockError, setBlockError]           = useState<string | null>(null);
@@ -166,7 +169,7 @@ export default function BookingsPage() {
     const slotMap = new Map<number, SlotSpan>();
     (bookings ?? []).forEach((b) => {
       if (b.court_id !== court.id) return;
-      if (b.status !== "confirmed" && b.status !== "pending_payment") return;
+      if (b.status !== "confirmed" && b.status !== "pending_payment" && b.status !== "pending_confirmation") return;
       const bStart = b.start_time.slice(0, 5);
       const bEnd   = normEnd(b.end_time.slice(0, 5));
       const covered = visibleSlotIndices.filter((idx) => {
@@ -287,6 +290,7 @@ export default function BookingsPage() {
       start_date: date, end_date: date,
       start_hour: location?.open_hour ?? 7, end_hour: (location?.open_hour ?? 7) + 1,
       reason: "",
+      is_open_play: false,
     });
     setBlockError(null);
     setBlockConflicts(null);
@@ -584,12 +588,12 @@ export default function BookingsPage() {
           (() => {
             const q = listSearch.trim().toLowerCase();
             const filtered = (monthBookings ?? [])
-              .filter((b) => b.status === "confirmed" || b.status === "pending_payment" || b.status === "cancelled" || b.status === "refunded")
+              .filter((b) => b.status === "confirmed" || b.status === "pending_payment" || b.status === "pending_confirmation" || b.status === "cancelled" || b.status === "refunded")
               .filter((b) => listStatusFilter === "all" || b.status === listStatusFilter)
               .filter((b) => !q || b.booker_name.toLowerCase().includes(q) || courtName(b.court_id).toLowerCase().includes(q))
               .sort((a, b) => {
-                const pendingA = a.status === "pending_payment" ? 0 : 1;
-                const pendingB = b.status === "pending_payment" ? 0 : 1;
+                const pendingA = (a.status === "pending_payment" || a.status === "pending_confirmation") ? 0 : 1;
+                const pendingB = (b.status === "pending_payment" || b.status === "pending_confirmation") ? 0 : 1;
                 if (pendingA !== pendingB) return pendingA - pendingB;
                 return a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time) || courtName(a.court_id).localeCompare(courtName(b.court_id));
               });
@@ -639,6 +643,7 @@ export default function BookingsPage() {
                     <option value="all">All statuses</option>
                     <option value="confirmed">Confirmed</option>
                     <option value="pending_payment">Pending</option>
+                    <option value="pending_confirmation">Awaiting Review</option>
                     <option value="cancelled">Cancelled</option>
                     <option value="refunded">Refunded</option>
                   </select>
@@ -774,12 +779,14 @@ export default function BookingsPage() {
 
                           const booking  = slotInfo?.booking ?? null;
                           const isPending = booking?.status === "pending_payment";
+                          const isAwaitingReview = booking?.status === "pending_confirmation";
                           const booked   = !!booking;
                           const block    = blockInfo?.block ?? null;
                           const blocked  = !!block;
                           const past     = isSlotPast(absIdx);
                           const available = !booked && !blocked && !past && court.is_active;
                           const rowSpan  = slotInfo?.rowSpan ?? blockInfo?.rowSpan ?? 1;
+                          const isOpenPlayBlock = blocked && !!block?.is_open_play;
 
                           return (
                             <td
@@ -790,10 +797,12 @@ export default function BookingsPage() {
                                 else if (blocked && block) { setRemoveBlockTarget(block); }
                                 else if (available) { openNewBooking(court.id, absIdx); }
                               }}
-                              style={blocked ? { backgroundImage: "repeating-linear-gradient(45deg, var(--color-border) 0, var(--color-border) 1px, transparent 1px, transparent 8px)" } : undefined}
+                              style={blocked && !isOpenPlayBlock ? { backgroundImage: "repeating-linear-gradient(45deg, var(--color-border) 0, var(--color-border) 1px, transparent 1px, transparent 8px)" } : undefined}
                               className={`px-2 py-2 align-middle transition-colors ${visibleCourts.length > 1 ? "border-l border-border" : ""} ${
                                 booked
-                                  ? "cursor-pointer " + (isPending ? "bg-amber-50/80 hover:bg-amber-100/60" : "bg-accent/12 hover:bg-accent/20")
+                                  ? "cursor-pointer " + (isPending ? "bg-amber-50/80 hover:bg-amber-100/60" : isAwaitingReview ? "bg-violet-50/80 hover:bg-violet-100/60" : "bg-accent/12 hover:bg-accent/20")
+                                  : isOpenPlayBlock
+                                  ? "cursor-pointer bg-red-50/80 hover:bg-red-100/60"
                                   : blocked
                                   ? "cursor-pointer bg-surface hover:bg-border/20"
                                   : available
@@ -803,7 +812,9 @@ export default function BookingsPage() {
                             >
                               <div className={`w-full rounded-lg flex flex-col items-center justify-center text-xs font-semibold select-none ${rowSpan === 1 ? "py-3" : "py-2.5 gap-0.5"} ${
                                 booked
-                                  ? isPending ? "text-amber-700" : "text-accent/80"
+                                  ? isPending ? "text-amber-700" : isAwaitingReview ? "text-violet-700" : "text-accent/80"
+                                  : isOpenPlayBlock
+                                  ? "text-red-700"
                                   : blocked
                                   ? "text-muted"
                                   : available
@@ -819,10 +830,13 @@ export default function BookingsPage() {
                                     {isPending && rowSpan > 1 && (
                                       <span className="mt-0.5 rounded-full bg-amber-100 text-amber-700 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider">Pending</span>
                                     )}
+                                    {isAwaitingReview && rowSpan > 1 && (
+                                      <span className="mt-0.5 rounded-full bg-violet-100 text-violet-700 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider">Awaiting Review</span>
+                                    )}
                                   </>
                                 ) : blocked && block ? (
                                   <>
-                                    <span className="font-bold leading-tight text-center">Blocked</span>
+                                    <span className="font-bold leading-tight text-center">{isOpenPlayBlock ? "Open Play" : "Blocked"}</span>
                                     {rowSpan > 1 && block.reason && (
                                       <span className="text-[10px] font-normal opacity-75 text-center line-clamp-1">{block.reason}</span>
                                     )}
@@ -858,8 +872,16 @@ export default function BookingsPage() {
                 Pending payment
               </span>
               <span className="flex items-center gap-1.5 text-xs text-muted">
+                <span className="w-3 h-3 rounded-sm bg-violet-100 shrink-0" />
+                Awaiting review
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-muted">
                 <span className="w-3 h-3 rounded-sm bg-surface border border-border shrink-0" style={{ backgroundImage: "repeating-linear-gradient(45deg, var(--color-border) 0, var(--color-border) 1px, transparent 1px, transparent 4px)" }} />
                 Blocked
+              </span>
+              <span className="flex items-center gap-1.5 text-xs text-muted">
+                <span className="w-3 h-3 rounded-sm bg-red-100 shrink-0" />
+                Open Play
               </span>
             </div>
           </>
@@ -1082,6 +1104,15 @@ export default function BookingsPage() {
                   <input type="text" value={blockForm.reason} onChange={(e) => setBlockForm((f) => f && ({ ...f, reason: e.target.value }))} placeholder="e.g. Maintenance, private event…"
                     className="w-full rounded-xl border border-border bg-surface px-4 py-2.5 text-base sm:text-[14px] text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent" />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={blockForm.is_open_play}
+                    onChange={(e) => setBlockForm((f) => f && ({ ...f, is_open_play: e.target.checked }))}
+                    className="rounded border-border"
+                  />
+                  This block is for Open Play
+                </label>
                 {blockError && <p className="text-sm text-red-600">{blockError}</p>}
               </div>
               <div className="flex gap-2.5 pt-1">
@@ -1107,6 +1138,7 @@ export default function BookingsPage() {
                           start_time: `${pad(blockForm.start_hour)}:00`,
                           end_time: blockForm.end_hour === 24 ? "00:00" : `${pad(blockForm.end_hour)}:00`,
                           reason: blockForm.reason || null,
+                          is_open_play: blockForm.is_open_play,
                         }),
                       });
                       const json = await res.json().catch(() => ({}));
@@ -1245,7 +1277,7 @@ export default function BookingsPage() {
               </div>
               {selectedBooking.status !== "cancelled" && selectedBooking.status !== "refunded" && (
                 <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
-                  {selectedBooking.status === "pending_payment" && !past && (
+                  {(selectedBooking.status === "pending_payment" || selectedBooking.status === "pending_confirmation") && !past && (
                     <button onClick={() => onConfirmPayment(selectedBooking.id)} disabled={confirmingId === selectedBooking.id}
                       className="flex-1 rounded-lg border border-green-400 bg-green-50 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-500 hover:text-white transition-colors disabled:opacity-40">
                       {confirmingId === selectedBooking.id ? "Confirming…" : "Confirm Payment"}

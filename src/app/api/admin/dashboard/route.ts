@@ -64,6 +64,9 @@ export async function GET() {
 
   const supabase = getAdminSupabase();
   const locationId = claims.location_id;
+  // Opportunistically expire any unpaid bookings past their location's
+  // threshold before reading stats — no cron in this app.
+  await supabase.rpc("expire_pending_bookings");
 
   const { data: loc } = await supabase
     .from("locations")
@@ -116,7 +119,7 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   const bookings: RawBooking[] = allBookings ?? [];
-  const active = (b: RawBooking) => b.status === "confirmed" || b.status === "pending_payment";
+  const active = (b: RawBooking) => b.status === "confirmed" || b.status === "pending_payment" || b.status === "pending_confirmation";
 
   const todayBk = bookings.filter((b) => b.date === todayStr);
   const yesterdayBk = bookings.filter((b) => b.date === yesterdayStr);

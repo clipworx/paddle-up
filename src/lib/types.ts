@@ -78,6 +78,8 @@ export type Location = {
   downpayment_min_hours: number;           // threshold in hours (default 3)
   no_split_rate_booking: boolean;          // block bookings spanning day/night boundary
   allow_half_hour_bookings: boolean;       // enable 30-min slot granularity
+  auto_expire_pending_payment: boolean;    // auto-cancel unpaid bookings after N hours
+  pending_payment_expiry_hours: number;    // threshold in hours (default 5)
 };
 
 export type Court = {
@@ -92,7 +94,7 @@ export type Court = {
   parent_court_id: string | null;
 };
 
-export type BookingStatus = "confirmed" | "cancelled" | "pending_payment" | "refunded";
+export type BookingStatus = "confirmed" | "cancelled" | "pending_payment" | "pending_confirmation" | "refunded";
 
 export type Booking = {
   id: string;
@@ -119,6 +121,7 @@ export type CourtBlock = {
   start_time: string; // HH:MM:SS
   end_time: string;   // HH:MM:SS
   reason: string | null;
+  is_open_play: boolean;
   created_at: string;
 };
 

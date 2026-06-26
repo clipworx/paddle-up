@@ -38,7 +38,7 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  if (booking.status !== "confirmed" && booking.status !== "pending_payment")
+  if (booking.status !== "confirmed" && booking.status !== "pending_payment" && booking.status !== "pending_confirmation")
     return NextResponse.json({ error: "cannot_reschedule" }, { status: 409 });
 
   const { data: blockHits } = await supabase
@@ -59,7 +59,7 @@ export async function PATCH(req: Request, { params }: Params) {
     .eq("court_id", booking.court_id)
     .eq("date", date)
     .neq("id", id)
-    .in("status", ["confirmed", "pending_payment"])
+    .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
     .lt("start_time", end_time)
     .gt("end_time", start_time);
 
@@ -85,7 +85,7 @@ export async function PATCH(req: Request, { params }: Params) {
       .select("id")
       .in("court_id", conflictingCourtIds)
       .eq("date", date)
-      .in("status", ["confirmed", "pending_payment"])
+      .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
       .lt("start_time", end_time)
       .gt("end_time", start_time)
       .limit(1);

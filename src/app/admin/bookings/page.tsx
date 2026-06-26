@@ -43,6 +43,7 @@ function fmtDatetime(iso: string): string {
 const STATUS_STYLES: Record<BookingStatus, string> = {
   confirmed: "bg-green-100 text-green-700",
   pending_payment: "bg-yellow-100 text-yellow-700",
+  pending_confirmation: "bg-violet-100 text-violet-700",
   cancelled: "bg-gray-100 text-gray-500",
   refunded: "bg-blue-100 text-blue-600",
 };
@@ -50,6 +51,7 @@ const STATUS_STYLES: Record<BookingStatus, string> = {
 const STATUS_LABELS: Record<BookingStatus, string> = {
   confirmed: "Confirmed",
   pending_payment: "Pending",
+  pending_confirmation: "Awaiting Review",
   cancelled: "Cancelled",
   refunded: "Refunded",
 };
@@ -185,7 +187,7 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
 
         {booking.status !== "cancelled" && booking.status !== "refunded" && (
           <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
-            {booking.status === "pending_payment" && !isPast && (
+            {(booking.status === "pending_payment" || booking.status === "pending_confirmation") && !isPast && (
               <button
                 onClick={() => onConfirm(booking.id)}
                 disabled={confirming}
@@ -512,7 +514,7 @@ export default function AdminBookingsPage() {
                             >
                               View
                             </button>
-                            {b.status === "pending_payment" && !rowIsPast && (
+                            {(b.status === "pending_payment" || b.status === "pending_confirmation") && !rowIsPast && (
                               <button
                                 onClick={() => onConfirm(b.id)}
                                 disabled={confirmingId === b.id}

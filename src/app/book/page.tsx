@@ -43,6 +43,7 @@ type ConfirmedBooking = {
   bookingId: string;
   requiresDownpayment: boolean;
   downpaymentAmount: number;
+  pendingPaymentExpiryHours: number | null;
   receiptDeferred?: boolean;
 };
 
@@ -109,7 +110,7 @@ function isSlotBooked(slots: TimeSlot[], bookings: Booking[], courtId: string, s
   const slotEnd = normEnd(slot.end);
   return bookings.some((b) => {
     if (b.court_id !== courtId) return false;
-    if (b.status !== "confirmed" && b.status !== "pending_payment") return false;
+    if (b.status !== "confirmed" && b.status !== "pending_payment" && b.status !== "pending_confirmation") return false;
     const bStart = b.start_time.slice(0, 5);
     const bEnd = normEnd(b.end_time.slice(0, 5));
     return bStart < slotEnd && bEnd > slot.start;
@@ -150,6 +151,7 @@ function blockedReason(slots: TimeSlot[], courts: Court[], bookings: Booking[], 
     return "This shared space is in use on a linked court right now.";
   }
   const block = findCourtBlock(slots, blocks, court.id, slotIdx);
+  if (block?.is_open_play) return "This court is reserved for an Open Play session right now.";
   if (block) return block.reason?.trim() || "This slot has been blocked off by the venue.";
   return null;
 }
@@ -739,6 +741,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       bookingId: json.booking?.id ?? "",
       requiresDownpayment: json.requires_downpayment ?? false,
       downpaymentAmount: totalPrice / 2,
+      pendingPaymentExpiryHours: json.pending_payment_expiry_hours ?? null,
     });
     setShowModal(false);
     fetchBookings(date);
@@ -770,7 +773,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     const slotMap = new Map<number, SlotSpan>();
     bookings.forEach((b) => {
       if (b.court_id !== court.id) return;
-      if (b.status !== "confirmed" && b.status !== "pending_payment") return;
+      if (b.status !== "confirmed" && b.status !== "pending_payment" && b.status !== "pending_confirmation") return;
       const bStart = b.start_time.slice(0, 5);
       const bEnd = normEnd(b.end_time.slice(0, 5));
       const covered = visibleSlotIndices.filter((idx) => {
@@ -917,6 +920,17 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   )}
                 </div>
               )}
+
+              {confirmed.pendingPaymentExpiryHours != null && (
+                <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
+                  <p className="text-[13px] font-semibold text-amber-800">
+                    ⏱ Upload within {confirmed.pendingPaymentExpiryHours} {confirmed.pendingPaymentExpiryHours === 1 ? "hour" : "hours"}
+                  </p>
+                  <p className="text-[12px] text-amber-700 mt-0.5">
+                    This booking will be automatically cancelled if no payment receipt is uploaded in time.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="px-5 pb-5 space-y-2.5">
@@ -954,11 +968,21 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               </div>
               <h2 className="text-lg font-bold text-foreground">We&apos;ve emailed you the link</h2>
               <p className="text-xs text-muted mt-1">
-                Upload your payment receipt anytime using the link sent to <strong className="text-foreground">{confirmed.bookerEmail}</strong>.
+                Upload your payment receipt using the link sent to <strong className="text-foreground">{confirmed.bookerEmail}</strong>.
               </p>
             </div>
 
             <div className="px-6 py-4 space-y-3">
+              {confirmed.pendingPaymentExpiryHours != null && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
+                  <p className="text-[13px] font-semibold text-amber-800">
+                    ⏱ Upload within {confirmed.pendingPaymentExpiryHours} {confirmed.pendingPaymentExpiryHours === 1 ? "hour" : "hours"}
+                  </p>
+                  <p className="text-[12px] text-amber-700 mt-0.5">
+                    This booking will be automatically cancelled if no payment receipt is uploaded in time.
+                  </p>
+                </div>
+              )}
               <Link
                 href={`/book/receipt/${confirmed.bookingId}`}
                 className="block w-full text-center rounded-full bg-accent text-white py-3 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
@@ -1303,8 +1327,10 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
 
                             const matchingBooking = slotInfo?.booking ?? null;
                             const isPending = matchingBooking?.status === "pending_payment";
+                            const isAwaitingReview = matchingBooking?.status === "pending_confirmation";
                             const booked = !!matchingBooking;
                             const blockedByRelated = !booked && (isSlotBlockedByRelated(slots, courts, bookings, court, absIdx) || isSlotAdminBlocked(slots, blocks, court.id, absIdx));
+                            const isOpenPlayBlock = blockedByRelated && !!findCourtBlock(slots, blocks, court.id, absIdx)?.is_open_play;
                             const reason = blockedByRelated ? blockedReason(slots, courts, bookings, blocks, court, absIdx) : null;
                             const past = isPast(slots, date, absIdx);
                             const available = !booked && !blockedByRelated && !past && court.is_active;
@@ -1323,8 +1349,12 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                                     ? "slot-open cursor-pointer"
                                     : isPending
                                     ? "slot-pending"
+                                    : isAwaitingReview
+                                    ? "slot-review"
                                     : booked
                                     ? "slot-booked"
+                                    : isOpenPlayBlock
+                                    ? "slot-open-play cursor-pointer"
                                     : blockedByRelated
                                     ? "slot-closed cursor-pointer"
                                     : "slot-past"
@@ -1336,12 +1366,16 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                                       ? "text-accent"
                                       : isPending
                                       ? "text-warning"
+                                      : isAwaitingReview
+                                      ? "text-violet-600"
                                       : booked
                                       ? "text-white/40"
+                                      : isOpenPlayBlock
+                                      ? "text-negative"
                                       : "text-muted"
                                   }`}
                                 >
-                                  {isPending ? "Pending" : booked ? "Booked" : blockedByRelated ? "Closed" : available ? "Open" : ""}
+                                  {isPending ? "Pending" : isAwaitingReview ? "In Review" : booked ? "Booked" : isOpenPlayBlock ? "Open Play" : blockedByRelated ? "Closed" : available ? "Open" : ""}
                                 </div>
                               </td>
                             );
@@ -1370,8 +1404,16 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   Pending
                 </span>
                 <span className="flex items-center gap-1.5 font-op-mono text-[10px] text-muted uppercase tracking-[0.04em]">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-slot-review-bg shadow-[inset_2px_0_0_var(--color-violet-400)] shrink-0" />
+                  In review
+                </span>
+                <span className="flex items-center gap-1.5 font-op-mono text-[10px] text-muted uppercase tracking-[0.04em]">
                   <span className="w-2.5 h-2.5 rounded-sm slot-closed shrink-0" />
                   Closed
+                </span>
+                <span className="flex items-center gap-1.5 font-op-mono text-[10px] text-muted uppercase tracking-[0.04em]">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-slot-open-play-bg shadow-[inset_2px_0_0_var(--color-negative)] shrink-0" />
+                  Open Play
                 </span>
                 <span className="flex items-center gap-1.5 font-op-mono text-[10px] text-muted uppercase tracking-[0.04em] opacity-60">
                   <span className="w-2.5 h-2.5 rounded-sm bg-ink-100 shrink-0" />

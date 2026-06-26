@@ -31,7 +31,7 @@ export async function POST(_req: Request, { params }: Params) {
     .from("bookings")
     .update({ status: "confirmed" })
     .eq("id", id)
-    .eq("status", "pending_payment");
+    .in("status", ["pending_payment", "pending_confirmation"]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

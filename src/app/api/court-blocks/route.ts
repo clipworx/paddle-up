@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const supabase = getServerSupabase();
   const { data, error } = await supabase
     .from("court_blocks")
-    .select("id, court_id, date, start_time, end_time, reason, created_at")
+    .select("id, court_id, date, start_time, end_time, reason, is_open_play, created_at")
     .eq("date", date)
     .order("start_time");
 

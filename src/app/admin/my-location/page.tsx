@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, CalendarCheck2, TrendingUp, BarChart2, BarChart3, Wallet, Clock, XCircle } from "lucide-react";
+import { CalendarDays, CalendarCheck2, TrendingUp, BarChart2, BarChart3, Wallet, Clock, XCircle, FileSearch } from "lucide-react";
 import { useLocationAdminContext } from "@/contexts/LocationAdminContext";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import { fmtPeso, fmtTime, timeAgo, pctChange } from "@/lib/admin-utils";
@@ -225,11 +225,12 @@ export default function MyLocationPage() {
                       {dashboardData.recent_activity.map((a) => {
                         const isConfirmed = a.status === "confirmed";
                         const isPendingPay = a.status === "pending_payment";
+                        const isAwaitingReview = a.status === "pending_confirmation";
                         const isCancelled = a.status === "cancelled";
-                        const FeedIcon = isConfirmed ? CalendarCheck2 : isPendingPay ? Clock : isCancelled ? XCircle : Wallet;
-                        const icBg = isConfirmed ? "bg-accent/15" : isPendingPay ? "bg-[#fdf0db]" : isCancelled ? "bg-[#fde8e6]" : "bg-[#e3f0ff]";
-                        const icFg = isConfirmed ? "text-accent" : isPendingPay ? "text-[#a96a14]" : isCancelled ? "text-[#b23b32]" : "text-[#2b7bd6]";
-                        const what = isConfirmed ? "booked" : isPendingPay ? "payment pending" : isCancelled ? "cancelled" : "refunded";
+                        const FeedIcon = isConfirmed ? CalendarCheck2 : isPendingPay ? Clock : isAwaitingReview ? FileSearch : isCancelled ? XCircle : Wallet;
+                        const icBg = isConfirmed ? "bg-accent/15" : isPendingPay ? "bg-[#fdf0db]" : isAwaitingReview ? "bg-[#ede9fe]" : isCancelled ? "bg-[#fde8e6]" : "bg-[#e3f0ff]";
+                        const icFg = isConfirmed ? "text-accent" : isPendingPay ? "text-[#a96a14]" : isAwaitingReview ? "text-[#6d28d9]" : isCancelled ? "text-[#b23b32]" : "text-[#2b7bd6]";
+                        const what = isConfirmed ? "booked" : isPendingPay ? "payment pending" : isAwaitingReview ? "receipt awaiting review" : isCancelled ? "cancelled" : "refunded";
                         return (
                           <div key={a.id} className="flex items-start gap-3.5 py-3.5 border-b border-surface last:border-b-0">
                             <div className={`w-[38px] h-[38px] rounded-[11px] ${icBg} flex items-center justify-center shrink-0`}>

@@ -27,6 +27,8 @@ export type LocationInfo = {
   downpayment_min_hours: number;
   no_split_rate_booking: boolean;
   allow_half_hour_bookings: boolean;
+  auto_expire_pending_payment: boolean;
+  pending_payment_expiry_hours: number;
 };
 
 export type Announcement = {

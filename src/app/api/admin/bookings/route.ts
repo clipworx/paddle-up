@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     .select("id")
     .eq("court_id", court_id)
     .eq("date", date)
-    .in("status", ["confirmed", "pending_payment"])
+    .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
     .lt("start_time", end_time)
     .gt("end_time", start_time);
 
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       .select("id")
       .in("court_id", conflictingCourtIds)
       .eq("date", date)
-      .in("status", ["confirmed", "pending_payment"])
+      .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
       .lt("start_time", end_time)
       .gt("end_time", start_time)
       .limit(1);
@@ -170,6 +170,10 @@ export async function GET(req: Request) {
   }
 
   const supabase = getAdminSupabase();
+  // Opportunistically expire any unpaid bookings past their location's
+  // threshold before listing — no cron in this app, so this is what keeps
+  // stale pending_payment rows from holding their slot indefinitely.
+  await supabase.rpc("expire_pending_bookings");
 
   let courtIds: string[] | null = null;
   if (claims.role === "location_admin" && claims.location_id) {

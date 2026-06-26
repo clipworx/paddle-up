@@ -104,6 +104,8 @@ export default function SettingsPage() {
   const [downpaymentMinHours, setDownpaymentMinHours]   = useState(3);
   const [noSplitRate, setNoSplitRate]                   = useState(false);
   const [allowHalfHour, setAllowHalfHour]               = useState(false);
+  const [autoExpirePending, setAutoExpirePending]       = useState(false);
+  const [pendingExpiryHours, setPendingExpiryHours]     = useState(5);
   const [policySaving, setPolicySaving]                 = useState(false);
   const [policyError, setPolicyError]                   = useState<string | null>(null);
   const [policySuccess, setPolicySuccess]               = useState(false);
@@ -130,6 +132,8 @@ export default function SettingsPage() {
     setDownpaymentMinHours(location.downpayment_min_hours ?? 3);
     setNoSplitRate(location.no_split_rate_booking ?? false);
     setAllowHalfHour(location.allow_half_hour_bookings ?? false);
+    setAutoExpirePending(location.auto_expire_pending_payment ?? false);
+    setPendingExpiryHours(location.pending_payment_expiry_hours ?? 5);
   }, [location]);
 
   async function onSavePolicies() {
@@ -146,6 +150,8 @@ export default function SettingsPage() {
           downpayment_min_hours: downpaymentMinHours,
           no_split_rate_booking: noSplitRate,
           allow_half_hour_bookings: allowHalfHour,
+          auto_expire_pending_payment: autoExpirePending,
+          pending_payment_expiry_hours: pendingExpiryHours,
         }),
       });
       if (!res.ok) {
@@ -792,6 +798,31 @@ export default function SettingsPage() {
                 <button type="button" onClick={() => setAllowHalfHour((v) => !v)}
                   className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${allowHalfHour ? "bg-accent" : "bg-border"}`}>
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${allowHalfHour ? "translate-x-5" : "translate-x-0"}`} />
+                </button>
+              </div>
+              {/* Auto-expire unpaid bookings */}
+              <div className="flex items-start justify-between gap-4 border-t border-border pt-4">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Auto-expire unpaid bookings</p>
+                  <p className="text-xs text-muted mt-0.5">Cancel bookings automatically if no payment receipt is uploaded within the time limit, freeing the slot.</p>
+                  {autoExpirePending && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <label className="text-xs text-muted font-semibold">After:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={72}
+                        value={pendingExpiryHours}
+                        onChange={(e) => setPendingExpiryHours(Math.max(1, parseInt(e.target.value) || 5))}
+                        className="w-16 rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground focus:outline-none focus:border-accent text-center"
+                      />
+                      <span className="text-xs text-muted">hours</span>
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => setAutoExpirePending((v) => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${autoExpirePending ? "bg-accent" : "bg-border"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${autoExpirePending ? "translate-x-5" : "translate-x-0"}`} />
                 </button>
               </div>
             </div>

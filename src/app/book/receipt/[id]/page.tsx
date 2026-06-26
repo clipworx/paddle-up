@@ -2,7 +2,7 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { BadgeCheck, Ban, Check, Clock, Upload } from "lucide-react";
+import { BadgeCheck, Ban, Check, Clock, FileSearch, Upload } from "lucide-react";
 import { Logo } from "@/components/Logo";
 
 type ReceiptBooking = {
@@ -11,7 +11,7 @@ type ReceiptBooking = {
   start_time: string;
   end_time: string;
   booker_name: string;
-  status: "confirmed" | "cancelled" | "pending_payment" | "refunded";
+  status: "confirmed" | "cancelled" | "pending_payment" | "pending_confirmation" | "refunded";
   receipt_url: string | null;
   receipt_uploaded_at: string | null;
   created_at: string;
@@ -20,6 +20,7 @@ type ReceiptBooking = {
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
+  pending_payment_expiry_hours: number | null;
 };
 
 const COURT_LINE_OVERLAY = {
@@ -60,13 +61,27 @@ function fmtDateTime(iso: string): string {
   });
 }
 
+function expiryDeadline(createdAt: string, hours: number): string {
+  const deadline = new Date(new Date(createdAt).getTime() + hours * 60 * 60 * 1000);
+  return deadline.toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
 const STATUS_BANNER: Record<ReceiptBooking["status"], { wrap: string; icon: React.ReactNode; label: string; labelClass: string; body: string }> = {
   pending_payment: {
     wrap: "bg-amber-50 border-b-2 border-warning",
     icon: <Clock size={18} className="text-warning shrink-0" />,
-    label: "Pending confirmation",
+    label: "Pending payment",
     labelClass: "text-warning",
     body: "Upload your receipt to confirm your booking.",
+  },
+  pending_confirmation: {
+    wrap: "bg-violet-50 border-b-2 border-violet-400",
+    icon: <FileSearch size={18} className="text-violet-600 shrink-0" />,
+    label: "Awaiting confirmation",
+    labelClass: "text-violet-600",
+    body: "We've received your receipt — the venue will confirm shortly.",
   },
   confirmed: {
     wrap: "bg-accent/10 border-b-2 border-accent",
@@ -158,8 +173,8 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
   }
 
   const banner = booking ? STATUS_BANNER[booking.status] : null;
-  const showStepper = booking && (booking.status === "pending_payment" || booking.status === "confirmed");
-  const receiptUnderReview = !!booking?.receipt_url && booking.status === "pending_payment";
+  const showStepper = booking && (booking.status === "pending_payment" || booking.status === "pending_confirmation" || booking.status === "confirmed");
+  const receiptUnderReview = booking?.status === "pending_confirmation";
   const confirmed = booking?.status === "confirmed";
 
   return (
@@ -239,7 +254,7 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
               </div>
             ) : (
               <>
-                {booking.payment_qr_url && (
+                {booking.status === "pending_payment" && booking.payment_qr_url && (
                   <div className="rounded-2xl bg-background p-5 shadow-sm flex flex-col items-center gap-3">
                     <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest self-start">Pay via QR</p>
                     <img
@@ -260,11 +275,22 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
                   </div>
                 )}
 
-                {booking.status === "pending_payment" && (
+                {(booking.status === "pending_payment" || booking.status === "pending_confirmation") && (
                   <div className="rounded-2xl bg-background p-5 shadow-sm space-y-3">
                     <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest">
                       {booking.receipt_url ? "Replace receipt" : "Upload your payment receipt"}
                     </p>
+
+                    {booking.status === "pending_payment" && booking.pending_payment_expiry_hours != null && (
+                      <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                        <p className="text-[13px] font-semibold text-amber-800">
+                          ⏱ Upload by {expiryDeadline(booking.created_at, booking.pending_payment_expiry_hours)}
+                        </p>
+                        <p className="text-[12px] text-amber-700 mt-0.5">
+                          This booking will be automatically cancelled if no receipt is uploaded by then.
+                        </p>
+                      </div>
+                    )}
 
                     {previewUrl ? (
                       <img src={previewUrl} alt="Receipt preview" className="w-full max-h-64 object-contain rounded-xl" />

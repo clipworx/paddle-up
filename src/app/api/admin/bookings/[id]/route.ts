@@ -27,7 +27,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     .from("bookings")
     .update({ status: "cancelled" })
     .eq("id", id)
-    .in("status", ["confirmed", "pending_payment"]);
+    .in("status", ["confirmed", "pending_payment", "pending_confirmation"]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

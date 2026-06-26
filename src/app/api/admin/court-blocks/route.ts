@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { court_ids, all_courts, start_date, end_date, start_time, end_time, reason } = body;
+  const { court_ids, all_courts, start_date, end_date, start_time, end_time, reason, is_open_play } = body;
 
   if (!start_date || !end_date || !start_time || !end_time) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
@@ -77,6 +77,7 @@ export async function POST(req: Request) {
       start_time,
       end_time,
       reason: typeof reason === "string" ? reason.trim() || null : null,
+      is_open_play: typeof is_open_play === "boolean" ? is_open_play : false,
     }))
   );
 
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     .select("id, court_id, date, start_time, end_time, booker_name, status, courts(name)")
     .in("court_id", courtIds)
     .in("date", dates)
-    .in("status", ["confirmed", "pending_payment"])
+    .in("status", ["confirmed", "pending_payment", "pending_confirmation"])
     .lt("start_time", end_time)
     .gt("end_time", start_time);
 

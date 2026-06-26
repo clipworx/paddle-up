@@ -208,6 +208,8 @@ body {
 @theme {
   --color-slot-booked:     #1e2428;
   --color-slot-pending-bg: #fffbf2;
+  --color-slot-review-bg:  #f5f3ff;
+  --color-slot-open-play-bg: #fef2f2;
 }
 
 /* Availability grid cell states */
@@ -224,6 +226,14 @@ body {
 .book-theme .slot-pending {
   background: var(--color-slot-pending-bg);
   box-shadow: inset 3px 0 0 var(--color-warning);
+}
+.book-theme .slot-review {
+  background: var(--color-slot-review-bg);
+  box-shadow: inset 3px 0 0 var(--color-violet-400);
+}
+.book-theme .slot-open-play {
+  background: var(--color-slot-open-play-bg);
+  box-shadow: inset 3px 0 0 var(--color-negative);
 }
 .book-theme .slot-closed {
   background-image: repeating-linear-gradient(
