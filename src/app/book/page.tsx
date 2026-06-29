@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { CalendarDays, CircleHelp, MapPin, Megaphone, Volleyball } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
@@ -462,9 +463,19 @@ function MonthCalendar({
 
 export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const { notify } = useNotifications();
+  const router = useRouter();
   const today = formatDate(new Date());
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [locationNotFound, setLocationNotFound] = useState(false);
+  // True when this slug page was reached by picking a venue from the multi-venue
+  // list (vs. landing directly on a shared/QR-code link) — survives the route
+  // remount via sessionStorage so "All locations" can still be shown.
+  const [cameFromPicker] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const flagged = sessionStorage.getItem("book_from_picker") === "1";
+    if (flagged) sessionStorage.removeItem("book_from_picker");
+    return flagged;
+  });
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [date, setDate] = useState(today);
   const [courts, setCourts] = useState<Court[]>([]);
@@ -511,6 +522,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
           else setLocationNotFound(true);
         } else if (locs.length === 1) {
           setSelectedLocation(locs[0]);
+          router.replace(`/book/${locs[0].slug}`);
         }
       })
       .catch(() => setLocations([]));
@@ -591,6 +603,19 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
     const id = setInterval(calc, 60000);
     return () => clearInterval(id);
   }, [date, today, courts, bookings]);
+
+  function selectLocation(loc: Location) {
+    setSelectedLocation(loc);
+    sessionStorage.setItem("book_from_picker", "1");
+    router.push(`/book/${loc.slug}`);
+  }
+
+  function backToAllLocations() {
+    setSelectedLocation(null);
+    setCourts([]);
+    setBookings([]);
+    router.push("/book");
+  }
 
   function prevDay() {
     const d = new Date(date + "T12:00:00");
@@ -945,9 +970,9 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
           )}
 
           <div className="ml-auto flex items-center gap-3 shrink-0">
-            {selectedLocation && !initialSlug && (locations?.length ?? 0) > 1 && (
+            {selectedLocation && (cameFromPicker || !initialSlug) && (locations?.length ?? 0) > 1 && (
               <button
-                onClick={() => { setSelectedLocation(null); setCourts([]); setBookings([]); }}
+                onClick={backToAllLocations}
                 className="flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:border-accent/50 transition-colors"
               >
                 ← All locations
@@ -1151,7 +1176,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
             <p className="text-sm text-muted">No locations available yet.</p>
           </div>
         ) : (
-          <LocationPicker locations={locations} onSelect={setSelectedLocation} />
+          <LocationPicker locations={locations} onSelect={selectLocation} />
         )
       )}
 
