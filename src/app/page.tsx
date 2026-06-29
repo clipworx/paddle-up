@@ -33,24 +33,6 @@ const FEATURES = [
   },
 ];
 
-const STEPS = [
-  {
-    n: "01",
-    title: "Choose a venue",
-    body: "Browse all available locations, see what's open, and compare rates.",
-  },
-  {
-    n: "02",
-    title: "Pick your slot",
-    body: "Select your venue and time on the live availability grid — no double-bookings, ever.",
-  },
-  {
-    n: "03",
-    title: "Confirm & play",
-    body: "Fill in your details, complete payment if required, and you're ready to go.",
-  },
-];
-
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-surface">
@@ -109,33 +91,6 @@ export default function HomePage() {
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-accent text-white px-8 py-3.5 text-[15px] font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-accent/25"
               >
                 Find a venue <ChevronRight size={16} />
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* ── How it works ── */}
-        <section className="bg-background border-y border-border">
-          <div className="mx-auto max-w-5xl px-4 py-16 sm:py-20">
-            <div className="text-center mb-12">
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">How it works</h2>
-              <p className="text-muted mt-2 text-sm">Make a booking in three simple steps.</p>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-8">
-              {STEPS.map((step) => (
-                <div key={step.n} className="relative text-center sm:text-left">
-                  <div className="inline-block font-mono text-4xl font-black text-accent/20 leading-none mb-3 select-none">{step.n}</div>
-                  <h3 className="text-[15px] font-bold text-foreground mb-1">{step.title}</h3>
-                  <p className="text-sm text-muted leading-relaxed">{step.body}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-12 text-center">
-              <Link
-                href="/book"
-                className="inline-flex items-center gap-2 rounded-full bg-accent text-white px-6 py-3 text-sm font-semibold hover:opacity-90 transition-opacity"
-              >
-                Browse venues <ChevronRight size={15} />
               </Link>
             </div>
           </div>

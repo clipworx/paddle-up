@@ -52,7 +52,7 @@ export default function SettingsPage() {
   const { me, location, loadLocation } = useLocationAdminContext();
 
   // Info edit state
-  const [editInfo, setEditInfo] = useState<{ name: string; address: string; description: string } | null>(null);
+  const [editInfo, setEditInfo] = useState<{ name: string; address: string; description: string; contact_email: string; contact_phone: string } | null>(null);
   const [editInfoSaving, setEditInfoSaving] = useState(false);
   const [editInfoError, setEditInfoError] = useState<string | null>(null);
 
@@ -182,6 +182,8 @@ export default function SettingsPage() {
           name: editInfo.name,
           address: editInfo.address,
           description: editInfo.description,
+          contact_email: editInfo.contact_email,
+          contact_phone: editInfo.contact_phone,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -377,6 +379,11 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold text-foreground">{location?.name}</p>
                   {location?.address && <p className="text-xs text-muted">{location.address}</p>}
                   {location?.description && <p className="text-xs text-muted">{location.description}</p>}
+                  {(location?.contact_email || location?.contact_phone) && (
+                    <p className="text-xs text-muted">
+                      {[location.contact_phone, location.contact_email].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
                 </div>
               </div>
               {location && (
@@ -387,6 +394,8 @@ export default function SettingsPage() {
                       name: location.name,
                       address: location.address ?? "",
                       description: location.description ?? "",
+                      contact_email: location.contact_email ?? "",
+                      contact_phone: location.contact_phone ?? "",
                     });
                   }}
                   className="shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
@@ -1055,6 +1064,30 @@ export default function SettingsPage() {
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent resize-none"
               />
             </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs uppercase tracking-wide text-muted font-semibold">Contact email</span>
+                <input
+                  type="email"
+                  value={editInfo.contact_email}
+                  onChange={(e) => setEditInfo({ ...editInfo, contact_email: e.target.value })}
+                  placeholder="support@yourvenue.com"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs uppercase tracking-wide text-muted font-semibold">Contact phone</span>
+                <input
+                  type="tel"
+                  value={editInfo.contact_phone}
+                  onChange={(e) => setEditInfo({ ...editInfo, contact_phone: e.target.value })}
+                  placeholder="09171234567"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent"
+                />
+              </label>
+            </div>
+            <p className="text-[11px] text-muted -mt-1">Shown to customers so they can reach you about a booking.</p>
 
             {editInfoError && (
               <p className="text-sm text-accent font-semibold">{editInfoError}</p>

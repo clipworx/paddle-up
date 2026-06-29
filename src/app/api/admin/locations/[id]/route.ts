@@ -81,7 +81,7 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  let body: { name?: unknown; address?: unknown; description?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown; auto_expire_pending_payment?: unknown; pending_payment_expiry_hours?: unknown };
+  let body: { name?: unknown; address?: unknown; description?: unknown; contact_email?: unknown; contact_phone?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown; auto_expire_pending_payment?: unknown; pending_payment_expiry_hours?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -91,6 +91,8 @@ export async function PUT(req: Request, { params }: Params) {
   const name = typeof body.name === "string" ? body.name.trim() : null;
   const address = typeof body.address === "string" ? body.address.trim() || null : undefined;
   const description = typeof body.description === "string" ? body.description.trim() || null : undefined;
+  const contact_email = typeof body.contact_email === "string" ? body.contact_email.trim() || null : undefined;
+  const contact_phone = typeof body.contact_phone === "string" ? body.contact_phone.trim() || null : undefined;
   const accent_color = typeof body.accent_color === "string" ? body.accent_color.trim() || null : undefined;
   const is_active = typeof body.is_active === "boolean" ? body.is_active : undefined;
   const slugRaw = typeof body.slug === "string" ? body.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "") : null;
@@ -117,6 +119,8 @@ export async function PUT(req: Request, { params }: Params) {
   if (name !== null) updates.name = name;
   if (address !== undefined) updates.address = address;
   if (description !== undefined) updates.description = description;
+  if (contact_email !== undefined) updates.contact_email = contact_email;
+  if (contact_phone !== undefined) updates.contact_phone = contact_phone;
   if (accent_color !== undefined) updates.accent_color = accent_color;
   if (is_active !== undefined) updates.is_active = is_active;
   if (slugRaw !== null) updates.slug = slugRaw;

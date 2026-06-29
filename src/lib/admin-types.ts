@@ -5,6 +5,8 @@ export type LocationInfo = {
   name: string;
   address: string | null;
   description: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
   day_rate: number;
   night_rate: number;
   night_start_time: string;

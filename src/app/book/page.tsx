@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { CalendarDays, MapPin, Megaphone, Volleyball } from "lucide-react";
+import { CalendarDays, CircleHelp, MapPin, Megaphone, Volleyball } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
 import { useNotifications } from "@/components/Notifications";
@@ -218,6 +218,12 @@ function slotRangeLabel(slots: TimeSlot[], startIdx: number, endIdx: number): st
   return `${fmtSlotTime(startStr)} – ${fmtSlotTime(rawEnd === "00:00" ? "00:00" : rawEnd)}`;
 }
 
+function contactNote(loc: Location): string | null {
+  const parts = [loc.contact_phone, loc.contact_email].filter(Boolean);
+  if (!parts.length) return null;
+  return `Have a concern about this booking? Contact ${loc.name} at ${parts.join(" or ")}.`;
+}
+
 // ─── Court surface placeholder (no photo) ──────────────────────────────────────
 
 const COURT_LINE_OVERLAY = {
@@ -333,32 +339,6 @@ function LocationPicker({
               </div>
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* How it works strip */}
-      <div className="border-t border-border bg-background px-4 py-10">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="font-op-mono text-[10px] font-bold text-accent uppercase tracking-[0.14em] text-center mb-8">
-            How it works
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-8">
-            {[
-              { n: "01", title: "Pick your venue", body: "Browse nearby venues, see what courts are available." },
-              { n: "02", title: "Pick your slot", body: "Select a space and time on the live availability grid." },
-              { n: "03", title: "Confirm & go", body: "Fill in your details, pay if required, and you're ready." },
-            ].map((step) => (
-              <div key={step.n} className="flex gap-3.5">
-                <div className="shrink-0 w-9 h-9 rounded-full bg-foreground flex items-center justify-center">
-                  <span className="font-op-mono text-xs font-bold text-white">{step.n}</span>
-                </div>
-                <div>
-                  <h3 className="text-[14px] font-bold text-foreground mb-1">{step.title}</h3>
-                  <p className="text-sm text-muted leading-relaxed">{step.body}</p>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>
@@ -496,6 +476,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const [showModal, setShowModal] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
   const [form, setForm] = useState<BookingForm>({
     court_id: "",
     startIdx: 0,
@@ -1061,6 +1042,10 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               >
                 I&apos;ll do this later
               </button>
+
+              {selectedLocation && contactNote(selectedLocation) && (
+                <p className="text-[11px] text-muted text-center pt-1">{contactNote(selectedLocation)}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1109,6 +1094,9 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               >
                 Close
               </button>
+              {selectedLocation && contactNote(selectedLocation) && (
+                <p className="text-[11px] text-muted text-center pt-1">{contactNote(selectedLocation)}</p>
+              )}
             </div>
           </div>
         </div>
@@ -1129,6 +1117,9 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
             <p className="text-xs text-accent mt-1">
               See you there, {confirmed.booker_name}!
             </p>
+            {selectedLocation && contactNote(selectedLocation) && (
+              <p className="text-[11px] text-foreground/60 mt-2">{contactNote(selectedLocation)}</p>
+            )}
           </div>
           <button
             onClick={() => setConfirmed(null)}
@@ -1232,14 +1223,24 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 </span>
               )}
             </button>
-            {selectedLocation?.latitude && selectedLocation?.longitude && (
-              <button
-                onClick={() => setShowMap(true)}
-                className="ml-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent text-white text-[13px] font-semibold hover:opacity-90 transition-opacity shadow-sm shrink-0"
-              >
-                <MapPin size={13} /> Map
-              </button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {selectedLocation && contactNote(selectedLocation) && (
+                <button
+                  onClick={() => setShowContactModal(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-border text-foreground text-[13px] font-semibold hover:border-accent hover:bg-accent/5 transition-colors shrink-0"
+                >
+                  <CircleHelp size={13} /> Have any concerns?
+                </button>
+              )}
+              {selectedLocation?.latitude && selectedLocation?.longitude && (
+                <button
+                  onClick={() => setShowMap(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent text-white text-[13px] font-semibold hover:opacity-90 transition-opacity shadow-sm shrink-0"
+                >
+                  <MapPin size={13} /> Map
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Announcements view */}
@@ -1620,6 +1621,9 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                   <div className="font-op-mono text-[10px] text-white/55 tracking-[0.06em] mt-1">
                     {displayDateCompact(date).toUpperCase()} · {slotRangeLabel(slots, form.startIdx, form.endIdx).toUpperCase()}
                   </div>
+                  {selectedLocation && contactNote(selectedLocation) && (
+                    <div className="text-[10px] text-white/45 mt-1.5 leading-snug">{contactNote(selectedLocation)}</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1928,6 +1932,56 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               <MapPin size={14} />
               Open in Google Maps
             </a>
+          </div>
+        </div>
+      )}
+
+      {/* Contact / concerns modal */}
+      {showContactModal && selectedLocation && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => setShowContactModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl bg-background shadow-2xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center shrink-0">
+                <CircleHelp size={18} className="text-accent" />
+              </div>
+              <button
+                onClick={() => setShowContactModal(false)}
+                className="shrink-0 w-8 h-8 rounded-full bg-surface flex items-center justify-center text-muted hover:text-foreground transition-colors"
+              >
+                ×
+              </button>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground">Have any concerns?</h2>
+              <p className="text-sm text-muted mt-1">
+                For anything about your booking — changes, issues, or questions — reach out to{" "}
+                <span className="font-semibold text-foreground">{selectedLocation.name}</span> directly.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {selectedLocation.contact_phone && (
+                <a
+                  href={`tel:${selectedLocation.contact_phone}`}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 hover:border-accent transition-colors"
+                >
+                  <span className="text-sm font-semibold text-foreground">{selectedLocation.contact_phone}</span>
+                </a>
+              )}
+              {selectedLocation.contact_email && (
+                <a
+                  href={`mailto:${selectedLocation.contact_email}`}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 hover:border-accent transition-colors"
+                >
+                  <span className="text-sm font-semibold text-foreground">{selectedLocation.contact_email}</span>
+                </a>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -41,21 +41,6 @@ const FEATURES = [
   },
 ];
 
-const STEPS = [
-  {
-    title: "Create an open play",
-    body: "Pick your name, a host password, and how many courts you're running — you'll get a 6-character code and land straight on the dashboard.",
-  },
-  {
-    title: "Share the code",
-    body: "Your group opens the link, types their name, and picks novice or intermediate. They're in the waiting room instantly — admit them with one tap.",
-  },
-  {
-    title: "Tap Join, play, repeat",
-    body: "Players tap Join when they want to play. Once a tier has four, a match forms and assigns itself to a free court automatically.",
-  },
-];
-
 export default function Landing() {
   const router = useRouter();
   const { notify } = useNotifications();
@@ -308,34 +293,6 @@ export default function Landing() {
               </button>
             </form>
           )}
-        </section>
-
-        {/* HOW IT WORKS */}
-        <section className="space-y-5">
-          <div className="text-center space-y-1">
-            <h2 className="text-xs uppercase tracking-widest text-accent font-semibold">
-              How it works
-            </h2>
-            <p className="text-2xl sm:text-3xl font-bold text-foreground ">
-              Three steps to get started
-            </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {STEPS.map((step, i) => (
-              <div
-                key={step.title}
-                className="rounded-xl border border-border bg-background/60 p-5 shadow-sm"
-              >
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-white font-bold mb-3">
-                  {i + 1}
-                </div>
-                <h3 className="text-base font-bold text-foreground mb-1">
-                  {step.title}
-                </h3>
-                <p className="text-sm text-muted leading-relaxed">{step.body}</p>
-              </div>
-            ))}
-          </div>
         </section>
 
         {/* FEATURES */}

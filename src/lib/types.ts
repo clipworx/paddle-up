@@ -47,6 +47,8 @@ export type Location = {
   slug: string;
   address: string | null;
   description: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
   is_active: boolean;
   court_count?: number;
   day_rate: number;
