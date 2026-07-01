@@ -6,11 +6,19 @@ import Link from "next/link";
 import { AdminNav } from "@/components/AdminNav";
 import { TIME_SLOTS } from "@/lib/types";
 import type { Booking, BookingStatus } from "@/lib/types";
+import { payoutEligibleFrom } from "@/lib/bookingValidation";
 
 type BookingWithCourt = Booking & { court_name?: string | null; location_name?: string | null };
 type LocationOption = { id: string; name: string };
 
 const TODAY = new Date().toISOString().split("T")[0];
+
+const DISBURSE_ERRORS: Record<string, string> = {
+  week_not_complete: "This booking's week isn't complete yet — refresh and try again later.",
+  payout_destination_not_set: "This venue hasn't set up payout details yet.",
+  reference_number_required: "A reference number is required.",
+  not_eligible: "This booking is no longer eligible for disbursement.",
+};
 
 function displayDate(iso: string): string {
   const [y, m, day] = iso.split("-").map(Number);
@@ -73,11 +81,51 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
   );
 }
 
-function RefundDialog({ onConfirm, onClose }: {
-  onConfirm: (reason: string) => void;
+const REFUND_ERRORS: Record<string, string> = {
+  already_refunded: "This booking has already been refunded.",
+  reference_number_required: "A reference number is required.",
+  forbidden: "You don't have permission to refund this booking.",
+};
+
+function RefundDialog({ booking, onClose, onSuccess }: {
+  booking: BookingWithCourt;
   onClose: () => void;
+  onSuccess: () => void;
 }) {
   const [reason, setReason] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [autoFailed, setAutoFailed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isXendit = booking.payment_gateway === "xendit";
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(booking.id)}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, reference_number: referenceNumber || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (json.error === "xendit_refund_failed") {
+          setAutoFailed(true);
+          setError("Automatic refund via Xendit failed. Enter a reference number to record it manually.");
+          return;
+        }
+        throw new Error(REFUND_ERRORS[json.error] ?? json.error ?? "Refund failed");
+      }
+      onSuccess();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
@@ -89,15 +137,95 @@ function RefundDialog({ onConfirm, onClose }: {
       >
         <div className="border-b border-border px-5 py-4">
           <h3 className="text-base font-bold text-foreground">Mark as Refunded</h3>
-          <p className="text-xs text-muted mt-1">Provide a reason for the refund (optional).</p>
+          <p className="text-xs text-muted mt-1">
+            {isXendit
+              ? "Provide a reason (optional). We'll try refunding via Xendit automatically first."
+              : "Provide a reason for the refund (optional)."}
+          </p>
         </div>
-        <div className="px-5 py-4">
+        <div className="px-5 py-4 space-y-3">
+          {isXendit && booking.payout_status === "disbursed" && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+              <p className="text-xs font-semibold text-amber-800">This booking's payout was already disbursed</p>
+              <p className="text-xs text-amber-700 mt-0.5">You'll need to recover that amount from the venue separately.</p>
+            </div>
+          )}
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. Court was unavailable, player requested cancellation…"
             rows={3}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent resize-none"
+          />
+          {isXendit && autoFailed && (
+            <label className="block space-y-1.5">
+              <span className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+                Reference number <span className="text-accent">*</span>
+              </span>
+              <input
+                type="text"
+                autoFocus
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                placeholder="e.g. Xendit dashboard refund ref"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent"
+              />
+            </label>
+          )}
+          {error && <p className="text-xs text-accent font-semibold">{error}</p>}
+        </div>
+        <div className="flex gap-2 border-t border-border px-5 py-4">
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="flex-1 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted hover:bg-accent/5 transition-colors disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || (isXendit && autoFailed && !referenceNumber.trim())}
+            className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-40"
+          >
+            {submitting ? "Processing…" : isXendit && !autoFailed ? "Refund via Xendit" : "Mark Refunded"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DisburseDialog({ onConfirm, onClose }: {
+  onConfirm: (referenceNumber: string) => void;
+  onClose: () => void;
+}) {
+  const [referenceNumber, setReferenceNumber] = useState("");
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl border border-border bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-border px-5 py-4">
+          <h3 className="text-base font-bold text-foreground">Record payout</h3>
+          <p className="text-xs text-muted mt-1">
+            Send the payout to the venue yourself (bank/e-wallet transfer), then enter the transfer&apos;s reference number here as proof.
+          </p>
+        </div>
+        <div className="px-5 py-4">
+          <label className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1.5">
+            Reference number <span className="text-accent">*</span>
+          </label>
+          <input
+            type="text"
+            autoFocus
+            value={referenceNumber}
+            onChange={(e) => setReferenceNumber(e.target.value)}
+            placeholder="e.g. GCash transfer ref, bank trace number…"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:border-accent"
           />
         </div>
         <div className="flex gap-2 border-t border-border px-5 py-4">
@@ -108,10 +236,11 @@ function RefundDialog({ onConfirm, onClose }: {
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(reason)}
-            className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+            onClick={() => onConfirm(referenceNumber)}
+            disabled={!referenceNumber.trim()}
+            className="flex-1 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-40"
           >
-            Mark Refunded
+            Mark Disbursed
           </button>
         </div>
       </div>
@@ -119,18 +248,22 @@ function RefundDialog({ onConfirm, onClose }: {
   );
 }
 
-function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onReschedule, confirming, cancelling, refunding }: {
+function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onReschedule, onDisburse, confirming, cancelling, disbursing, isSuperadmin }: {
   booking: BookingWithCourt;
   onClose: () => void;
   onConfirm: (id: string) => void;
   onCancel: (id: string) => void;
-  onRefund: (id: string) => void;
+  onRefund: (b: BookingWithCourt) => void;
   onReschedule: (b: BookingWithCourt) => void;
+  onDisburse: (id: string) => void;
   confirming: boolean;
   cancelling: boolean;
-  refunding: boolean;
+  disbursing: boolean;
+  isSuperadmin: boolean;
 }) {
   const isPast = booking.date < TODAY;
+  const payoutEligibleDate = payoutEligibleFrom(booking.date);
+  const isPayoutEligible = TODAY >= payoutEligibleDate;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
@@ -163,8 +296,22 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
             <Row label="Notes" value={booking.notes ?? "—"} />
           </div>
           {booking.status === "refunded" && (
-            <div className="border-t border-border pt-3">
+            <div className="border-t border-border pt-3 space-y-3">
               <Row label="Refund reason" value={booking.refund_reason ?? "No reason provided"} />
+              {booking.xendit_refund_id && (
+                <Row label="Refund ref" value={booking.xendit_refund_id} mono />
+              )}
+            </div>
+          )}
+          {booking.payment_gateway === "xendit" && (
+            <div className="border-t border-border pt-3 space-y-3">
+              <Row label="Payment ref" value={booking.xendit_invoice_id ?? "—"} mono />
+              {booking.xendit_paid_amount != null && (
+                <Row label="Paid" value={`₱${booking.xendit_paid_amount.toFixed(2)} via Xendit`} />
+              )}
+              {booking.payout_status === "disbursed" && (
+                <Row label="Payout ref" value={booking.payout_disbursement_id ?? "—"} mono />
+              )}
             </div>
           )}
           {booking.receipt_url && (
@@ -213,25 +360,38 @@ function DetailModal({ booking, onClose, onConfirm, onCancel, onRefund, onResche
                 {cancelling ? "Cancelling…" : "Cancel Booking"}
               </button>
             )}
-            {isPast && (
+            {isPast && (booking.payment_gateway !== "xendit" || isSuperadmin) && (
               <button
-                onClick={() => onRefund(booking.id)}
-                disabled={refunding}
+                onClick={() => onRefund(booking)}
                 className="flex-1 rounded-lg border border-blue-400 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
               >
-                {refunding ? "Processing…" : "Mark as Refunded"}
+                Mark as Refunded
               </button>
+            )}
+            {isSuperadmin && booking.payment_gateway === "xendit" && booking.status === "confirmed" && booking.payout_status === "pending" && (
+              isPayoutEligible ? (
+                <button
+                  onClick={() => onDisburse(booking.id)}
+                  disabled={disbursing}
+                  className="flex-1 rounded-lg border border-violet-400 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-600 hover:text-white transition-colors disabled:opacity-40"
+                >
+                  {disbursing ? "Disbursing…" : "Disburse payout"}
+                </button>
+              ) : (
+                <p className="flex-1 text-xs text-muted self-center text-center">
+                  Payout available {displayDate(payoutEligibleDate)} (once this week is complete)
+                </p>
+              )
             )}
           </div>
         )}
-        {booking.status === "cancelled" && isPast && (
+        {booking.status === "cancelled" && isPast && (booking.payment_gateway !== "xendit" || isSuperadmin) && (
           <div className="flex gap-2 border-t border-border px-5 py-4">
             <button
-              onClick={() => onRefund(booking.id)}
-              disabled={refunding}
+              onClick={() => onRefund(booking)}
               className="flex-1 rounded-lg border border-blue-400 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
             >
-              {refunding ? "Processing…" : "Mark as Refunded"}
+              Mark as Refunded
             </button>
           </div>
         )}
@@ -248,9 +408,11 @@ export default function AdminBookingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [disbursingId, setDisbursingId] = useState<string | null>(null);
+  const [meRole, setMeRole] = useState<string | null>(null);
   const [selected, setSelected] = useState<BookingWithCourt | null>(null);
-  const [refundTarget, setRefundTarget] = useState<string | null>(null);
+  const [refundTarget, setRefundTarget] = useState<BookingWithCourt | null>(null);
+  const [disburseTarget, setDisburseTarget] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -282,6 +444,15 @@ export default function AdminBookingsPage() {
     fetch("/api/admin/locations")
       .then((r) => r.json())
       .then((j) => setLocations((j.locations ?? []).map((l: { id: string; name: string }) => ({ id: l.id, name: l.name }))))
+      .catch(() => {});
+  }, []);
+
+  // Disbursement is a superadmin-only action — fetch the current admin's role
+  // so the button only shows for them (the API also enforces this server-side).
+  useEffect(() => {
+    fetch("/api/admin/me")
+      .then((r) => r.json())
+      .then((j) => setMeRole(j.role ?? null))
       .catch(() => {});
   }, []);
 
@@ -328,27 +499,37 @@ export default function AdminBookingsPage() {
     }
   }
 
-  async function onRefundConfirm(reason: string) {
-    if (!refundTarget) return;
-    const id = refundTarget;
-    setRefundTarget(null);
-    setRefundingId(id);
+  function onDisburse(id: string) {
+    setSelected(null);
+    setDisburseTarget(id);
+  }
+
+  async function onDisburseConfirm(referenceNumber: string) {
+    if (!disburseTarget) return;
+    const id = disburseTarget;
+    setDisburseTarget(null);
+    setDisbursingId(id);
     try {
-      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}/refund`, {
+      const res = await fetch(`/api/admin/bookings/${encodeURIComponent(id)}/disburse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reference_number: referenceNumber }),
       });
       if (res.status === 401 || res.status === 403) { router.replace("/admin/login"); return; }
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Refund failed");
+      if (!res.ok) throw new Error(DISBURSE_ERRORS[json.error] ?? json.error ?? "Disbursement failed");
       await loadBookings(locationId, page);
-      setSelected(null);
     } catch (err) {
       alert((err as Error).message);
     } finally {
-      setRefundingId(null);
+      setDisbursingId(null);
     }
+  }
+
+  function onRefundSuccess() {
+    setRefundTarget(null);
+    setSelected(null);
+    loadBookings(locationId, page);
   }
 
   function openReschedule(b: BookingWithCourt) {
@@ -540,13 +721,12 @@ export default function AdminBookingsPage() {
                                 {cancellingId === b.id ? "…" : "Cancel"}
                               </button>
                             )}
-                            {b.status !== "refunded" && rowIsPast && (
+                            {b.status !== "refunded" && rowIsPast && (b.payment_gateway !== "xendit" || meRole === "admin") && (
                               <button
-                                onClick={() => setRefundTarget(b.id)}
-                                disabled={refundingId === b.id}
+                                onClick={() => setRefundTarget(b)}
                                 className="rounded-lg border border-blue-400 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
                               >
-                                {refundingId === b.id ? "…" : "Refund"}
+                                Refund
                               </button>
                             )}
                           </div>
@@ -592,18 +772,28 @@ export default function AdminBookingsPage() {
           onClose={() => setSelected(null)}
           onConfirm={onConfirm}
           onCancel={onCancel}
-          onRefund={(id) => { setSelected(null); setRefundTarget(id); }}
+          onRefund={(b) => { setSelected(null); setRefundTarget(b); }}
           onReschedule={openReschedule}
+          onDisburse={onDisburse}
           confirming={confirmingId === selected.id}
           cancelling={cancellingId === selected.id}
-          refunding={refundingId === selected.id}
+          disbursing={disbursingId === selected.id}
+          isSuperadmin={meRole === "admin"}
         />
       )}
 
       {refundTarget && (
         <RefundDialog
-          onConfirm={onRefundConfirm}
+          booking={refundTarget}
+          onSuccess={onRefundSuccess}
           onClose={() => setRefundTarget(null)}
+        />
+      )}
+
+      {disburseTarget && (
+        <DisburseDialog
+          onConfirm={onDisburseConfirm}
+          onClose={() => setDisburseTarget(null)}
         />
       )}
 

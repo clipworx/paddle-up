@@ -3,7 +3,8 @@ import { getServerSupabase } from "@/lib/supabase-server";
 import { getAdminSupabase } from "@/lib/supabase-admin";
 import { sendBookingNotification, sendBookingConfirmation } from "@/lib/email";
 import { sendTelegramMessage, buildNewBookingMessage } from "@/lib/telegram";
-import { TIME_RE, DATE_RE, normEndTime } from "@/lib/bookingValidation";
+import { TIME_RE, DATE_RE, normEndTime, calcBookingPrice } from "@/lib/bookingValidation";
+import { createInvoice } from "@/lib/xendit";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
   // Fetch court + location info; verify location is active and subscription is valid
   const { data: courtRow } = await supabase
     .from("courts")
-    .select("name, location_id, is_active, parent_court_id, custom_rate_unit, custom_day_rate, locations(name, is_active, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking, auto_expire_pending_payment, pending_payment_expiry_hours)")
+    .select("name, location_id, is_active, parent_court_id, custom_rate_unit, custom_day_rate, custom_night_rate, locations(name, is_active, day_rate, night_rate, allow_half_hour_bookings, payment_qr_url, payment_account_name, payment_account_number, subscription_due_date, subscription_grace_days, night_start_time, weekend_night_start_time, require_downpayment, downpayment_min_hours, no_split_rate_booking, auto_expire_pending_payment, pending_payment_expiry_hours, xendit_enabled)")
     .eq("id", court_id)
     .single();
 
@@ -118,6 +119,9 @@ export async function POST(req: Request) {
   const loc = (courtRow?.locations as unknown) as {
     name: string;
     is_active: boolean;
+    day_rate: number;
+    night_rate: number;
+    allow_half_hour_bookings: boolean;
     payment_qr_url: string | null;
     payment_account_name: string | null;
     payment_account_number: string | null;
@@ -130,6 +134,7 @@ export async function POST(req: Request) {
     no_split_rate_booking: boolean;
     auto_expire_pending_payment: boolean;
     pending_payment_expiry_hours: number;
+    xendit_enabled: boolean;
   } | null;
 
   if (!courtRow?.is_active || !loc?.is_active) {
@@ -223,12 +228,14 @@ export async function POST(req: Request) {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
-  const requiresPayment = !!loc?.payment_qr_url;
+  const useXendit = !!loc?.xendit_enabled;
+  const requiresPayment = useXendit || !!loc?.payment_qr_url;
   const status = requiresPayment ? "pending_payment" : "confirmed";
+  const payment_gateway = useXendit ? "xendit" : null;
 
   const { data, error } = await supabase
     .from("bookings")
-    .insert({ court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status })
+    .insert({ court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, payment_gateway })
     .select("id")
     .single();
 
@@ -239,8 +246,47 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Fire-and-forget: send confirmation to booker + notify location admin
   const origin = new URL(req.url).origin;
+  let xenditInvoiceUrl: string | null = null;
+
+  if (useXendit && loc) {
+    const totalPrice = calcBookingPrice({
+      startTime: start_time,
+      endTime: end_time,
+      dayRate: loc.day_rate,
+      nightRate: loc.night_rate,
+      nightStartHour: nightStartH,
+      customDayRate: courtRow?.custom_day_rate ?? null,
+      customNightRate: (courtRow as { custom_night_rate?: number | null })?.custom_night_rate ?? null,
+      customRateUnit: (courtRow?.custom_rate_unit as "hr" | "pax" | "flat" | null) ?? null,
+      allowHalfHour: loc.allow_half_hour_bookings,
+      playerCount: player_count,
+    });
+
+    const invoice = totalPrice > 0 ? await createInvoice({
+      externalId: data.id,
+      amount: totalPrice,
+      payerEmail: booker_email,
+      payerName: booker_name,
+      description: `${courtRow?.name ?? "Court"} booking — ${date} ${start_time}-${end_time}`,
+      successRedirectUrl: `${origin}/book/receipt/${data.id}`,
+      failureRedirectUrl: `${origin}/book/receipt/${data.id}`,
+    }) : null;
+
+    if (!invoice) {
+      // Payment setup failed — release the slot rather than leave an unpayable booking.
+      await supabase.from("bookings").delete().eq("id", data.id);
+      return NextResponse.json({ error: "payment_setup_failed" }, { status: 502 });
+    }
+
+    await supabase
+      .from("bookings")
+      .update({ xendit_invoice_id: invoice.id, xendit_invoice_url: invoice.invoice_url })
+      .eq("id", data.id);
+    xenditInvoiceUrl = invoice.invoice_url;
+  }
+
+  // Fire-and-forget: send confirmation to booker + notify location admin
   const emailData = {
     locationName: loc?.name ?? "",
     courtName: courtRow?.name ?? "",
@@ -293,10 +339,12 @@ export async function POST(req: Request) {
   return NextResponse.json({
     booking: data,
     requires_payment: requiresPayment,
-    payment_qr_url: loc?.payment_qr_url ?? null,
-    payment_account_name: loc?.payment_account_name ?? null,
-    payment_account_number: loc?.payment_account_number ?? null,
-    requires_downpayment: requiresDownpayment,
+    payment_gateway,
+    xendit_invoice_url: xenditInvoiceUrl,
+    payment_qr_url: useXendit ? null : loc?.payment_qr_url ?? null,
+    payment_account_name: useXendit ? null : loc?.payment_account_name ?? null,
+    payment_account_number: useXendit ? null : loc?.payment_account_number ?? null,
+    requires_downpayment: useXendit ? false : requiresDownpayment,
     downpayment_min_hours: loc?.downpayment_min_hours ?? 3,
     pending_payment_expiry_hours: requiresPayment && loc?.auto_expire_pending_payment ? loc.pending_payment_expiry_hours : null,
   }, { status: 201 });

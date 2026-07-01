@@ -18,6 +18,11 @@ export type LocationInfo = {
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
+  xendit_enabled: boolean;
+  xendit_payout_channel_code: string | null;
+  xendit_payout_account_number: string | null;
+  xendit_payout_account_holder_name: string | null;
+  xendit_platform_fee_percent: number;
   latitude: number | null;
   longitude: number | null;
   logo_url: string | null;

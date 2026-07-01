@@ -1259,7 +1259,29 @@ export default function BookingsPage() {
                 {selectedBooking.status === "refunded" && (
                   <div className="flex gap-3 border-t border-border pt-3">
                     <span className="w-20 shrink-0 text-xs text-muted font-semibold uppercase tracking-wide pt-0.5">Refund reason</span>
-                    <span className="text-sm text-foreground">{selectedBooking.refund_reason ?? "—"}</span>
+                    <div className="text-sm">
+                      <p className="text-foreground">{selectedBooking.refund_reason ?? "—"}</p>
+                      {selectedBooking.xendit_refund_id && (
+                        <p className="text-xs font-mono text-muted mt-0.5">{selectedBooking.xendit_refund_id}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {selectedBooking.payment_gateway === "xendit" && (
+                  <div className="flex gap-3 border-t border-border pt-3">
+                    <span className="w-20 shrink-0 text-xs text-muted font-semibold uppercase tracking-wide pt-0.5">Payment ref</span>
+                    <div className="text-sm">
+                      <p className="font-mono text-foreground">{selectedBooking.xendit_invoice_id ?? "—"}</p>
+                      {selectedBooking.xendit_paid_amount != null && (
+                        <p className="text-xs text-muted mt-0.5">Paid ₱{selectedBooking.xendit_paid_amount.toFixed(2)} via Xendit</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {selectedBooking.payout_status === "disbursed" && (
+                  <div className="flex gap-3 border-t border-border pt-3">
+                    <span className="w-20 shrink-0 text-xs text-muted font-semibold uppercase tracking-wide pt-0.5">Payout ref</span>
+                    <span className="text-sm font-mono text-foreground">{selectedBooking.payout_disbursement_id ?? "—"}</span>
                   </div>
                 )}
                 {selectedBooking.receipt_url && (
@@ -1295,11 +1317,16 @@ export default function BookingsPage() {
                       {cancellingId === selectedBooking.id ? "Cancelling…" : "Cancel Booking"}
                     </button>
                   )}
-                  {past && (
+                  {past && selectedBooking.payment_gateway !== "xendit" && (
                     <button onClick={() => { setSelectedBooking(null); setRefundTarget(selectedBooking.id); }} disabled={refundingId === selectedBooking.id}
                       className="flex-1 rounded-lg border border-blue-400 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40">
                       {refundingId === selectedBooking.id ? "Processing…" : "Mark as Refunded"}
                     </button>
+                  )}
+                  {past && selectedBooking.payment_gateway === "xendit" && (
+                    <p className="flex-1 text-xs text-muted self-center text-center">
+                      This was paid via Xendit — refunds for online payments are handled by the platform team.
+                    </p>
                   )}
                 </div>
               )}

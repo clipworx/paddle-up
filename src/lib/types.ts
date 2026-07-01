@@ -65,6 +65,12 @@ export type Location = {
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
+  // Xendit
+  xendit_enabled: boolean;
+  xendit_payout_channel_code: string | null;
+  xendit_payout_account_number: string | null;
+  xendit_payout_account_holder_name: string | null;
+  xendit_platform_fee_percent: number;
   // Map
   latitude: number | null;
   longitude: number | null;
@@ -114,6 +120,14 @@ export type Booking = {
   receipt_url: string | null;
   receipt_uploaded_at: string | null;
   created_at: string;
+  payment_gateway: "xendit" | null;
+  xendit_invoice_id: string | null;
+  xendit_invoice_url: string | null;
+  xendit_paid_amount: number | null;
+  payout_status: "pending" | "disbursed" | "failed" | null;
+  payout_disbursement_id: string | null;
+  payout_disbursed_at: string | null;
+  xendit_refund_id: string | null;
 };
 
 export type CourtBlock = {

@@ -38,6 +38,8 @@ type ConfirmedBooking = {
   booker_name: string;
   bookerEmail: string;
   requiresPayment: boolean;
+  paymentGateway: "xendit" | null;
+  xenditInvoiceUrl: string | null;
   paymentQrUrl: string | null;
   paymentAccountName: string | null;
   paymentAccountNumber: string | null;
@@ -838,6 +840,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
         slot_in_past: "That time has already passed. Please pick another slot.",
         player_count_invalid: "Invalid number of players.",
         split_rate_not_allowed: "This location does not allow bookings that span the day and night rate. Please book day and night slots separately.",
+        payment_setup_failed: "Couldn't set up payment for this booking. Please try again.",
       };
       setFormError(msgs[json.error] ?? json.error ?? "Booking failed.");
       return;
@@ -855,6 +858,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
       booker_name: form.booker_name,
       bookerEmail: form.booker_email,
       requiresPayment: json.requires_payment ?? false,
+      paymentGateway: json.payment_gateway ?? null,
+      xenditInvoiceUrl: json.xendit_invoice_url ?? null,
       paymentQrUrl: json.payment_qr_url ?? null,
       paymentAccountName: json.payment_account_name ?? null,
       paymentAccountNumber: json.payment_account_number ?? null,
@@ -1016,9 +1021,13 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               {confirmed.requiresDownpayment && (
                 <p className="text-xs text-muted mb-3">Balance on arrival: ₱{confirmed.downpaymentAmount.toFixed(2)}</p>
               )}
-              <p className="text-[13px] text-muted mb-4">Scan to pay, then upload your receipt below.</p>
+              <p className="text-[13px] text-muted mb-4">
+                {confirmed.paymentGateway === "xendit"
+                  ? "Pay securely online — your booking confirms automatically once payment clears."
+                  : "Scan to pay, then upload your receipt below."}
+              </p>
 
-              {confirmed.paymentQrUrl && (
+              {confirmed.paymentGateway !== "xendit" && confirmed.paymentQrUrl && (
                 <div className="flex flex-col items-center gap-3">
                   <div className="inline-block p-3 rounded-2xl border border-border">
                     <img
@@ -1044,22 +1053,31 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               {confirmed.pendingPaymentExpiryHours != null && (
                 <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
                   <p className="text-[13px] font-semibold text-amber-800">
-                    ⏱ Upload within {confirmed.pendingPaymentExpiryHours} {confirmed.pendingPaymentExpiryHours === 1 ? "hour" : "hours"}
+                    ⏱ {confirmed.paymentGateway === "xendit" ? "Pay" : "Upload"} within {confirmed.pendingPaymentExpiryHours} {confirmed.pendingPaymentExpiryHours === 1 ? "hour" : "hours"}
                   </p>
                   <p className="text-[12px] text-amber-700 mt-0.5">
-                    This booking will be automatically cancelled if no payment receipt is uploaded in time.
+                    This booking will be automatically cancelled if {confirmed.paymentGateway === "xendit" ? "payment isn't completed" : "no payment receipt is uploaded"} in time.
                   </p>
                 </div>
               )}
             </div>
 
             <div className="px-5 pb-5 space-y-2.5">
-              <Link
-                href={`/book/receipt/${confirmed.bookingId}`}
-                className="block w-full text-center rounded-full bg-accent text-white py-3.5 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
-              >
-                Upload payment receipt
-              </Link>
+              {confirmed.paymentGateway === "xendit" ? (
+                <a
+                  href={confirmed.xenditInvoiceUrl ?? "#"}
+                  className="block w-full text-center rounded-full bg-accent text-white py-3.5 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
+                >
+                  Pay now
+                </a>
+              ) : (
+                <Link
+                  href={`/book/receipt/${confirmed.bookingId}`}
+                  className="block w-full text-center rounded-full bg-accent text-white py-3.5 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
+                >
+                  Upload payment receipt
+                </Link>
+              )}
 
               <button
                 onClick={() => setConfirmed((c) => c && ({ ...c, receiptDeferred: true }))}
@@ -1092,7 +1110,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               </div>
               <h2 className="text-lg font-bold text-foreground">We&apos;ve emailed you the link</h2>
               <p className="text-xs text-muted mt-1">
-                Upload your payment receipt using the link sent to <strong className="text-foreground">{confirmed.bookerEmail}</strong>.
+                {confirmed.paymentGateway === "xendit" ? "Complete your payment" : "Upload your payment receipt"} using the link sent to <strong className="text-foreground">{confirmed.bookerEmail}</strong>.
               </p>
             </div>
 
@@ -1100,10 +1118,10 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
               {confirmed.pendingPaymentExpiryHours != null && (
                 <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
                   <p className="text-[13px] font-semibold text-amber-800">
-                    ⏱ Upload within {confirmed.pendingPaymentExpiryHours} {confirmed.pendingPaymentExpiryHours === 1 ? "hour" : "hours"}
+                    ⏱ {confirmed.paymentGateway === "xendit" ? "Pay" : "Upload"} within {confirmed.pendingPaymentExpiryHours} {confirmed.pendingPaymentExpiryHours === 1 ? "hour" : "hours"}
                   </p>
                   <p className="text-[12px] text-amber-700 mt-0.5">
-                    This booking will be automatically cancelled if no payment receipt is uploaded in time.
+                    This booking will be automatically cancelled if {confirmed.paymentGateway === "xendit" ? "payment isn't completed" : "no payment receipt is uploaded"} in time.
                   </p>
                 </div>
               )}
@@ -1111,7 +1129,7 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
                 href={`/book/receipt/${confirmed.bookingId}`}
                 className="block w-full text-center rounded-full bg-accent text-white py-3 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
               >
-                Upload payment receipt now
+                {confirmed.paymentGateway === "xendit" ? "Complete payment now" : "Upload payment receipt now"}
               </Link>
               <button
                 onClick={() => setConfirmed(null)}

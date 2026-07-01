@@ -22,7 +22,7 @@ export async function GET() {
   const supabase = getAdminSupabase();
   const { data, error } = await supabase
     .from("locations")
-    .select("id, name, slug, address, description, contact_email, contact_phone, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, allow_half_hour_bookings, auto_expire_pending_payment, pending_payment_expiry_hours, courts(id, name, description, is_active, parent_court_id, custom_day_rate, custom_night_rate, custom_rate_unit)")
+    .select("id, name, slug, address, description, contact_email, contact_phone, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, xendit_enabled, xendit_payout_channel_code, xendit_payout_account_number, xendit_payout_account_holder_name, xendit_platform_fee_percent, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, allow_half_hour_bookings, auto_expire_pending_payment, pending_payment_expiry_hours, courts(id, name, description, is_active, parent_court_id, custom_day_rate, custom_night_rate, custom_rate_unit)")
     .order("name");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

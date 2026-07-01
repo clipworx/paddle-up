@@ -110,6 +110,16 @@ export default function SettingsPage() {
   const [policyError, setPolicyError]                   = useState<string | null>(null);
   const [policySuccess, setPolicySuccess]               = useState(false);
 
+  // Xendit state
+  const [xenditEnabled, setXenditEnabled]               = useState(false);
+  const [xenditChannelCode, setXenditChannelCode]       = useState("");
+  const [xenditAccountNumber, setXenditAccountNumber]   = useState("");
+  const [xenditAccountHolderName, setXenditAccountHolderName] = useState("");
+  const [xenditFeePercent, setXenditFeePercent]         = useState(0);
+  const [xenditSaving, setXenditSaving]                 = useState(false);
+  const [xenditError, setXenditError]                   = useState<string | null>(null);
+  const [xenditSuccess, setXenditSuccess]               = useState(false);
+
   // Sync state from location once loaded
   React.useEffect(() => {
     if (!location) return;
@@ -134,7 +144,41 @@ export default function SettingsPage() {
     setAllowHalfHour(location.allow_half_hour_bookings ?? false);
     setAutoExpirePending(location.auto_expire_pending_payment ?? false);
     setPendingExpiryHours(location.pending_payment_expiry_hours ?? 5);
+    setXenditEnabled(location.xendit_enabled ?? false);
+    setXenditChannelCode(location.xendit_payout_channel_code ?? "");
+    setXenditAccountNumber(location.xendit_payout_account_number ?? "");
+    setXenditAccountHolderName(location.xendit_payout_account_holder_name ?? "");
+    setXenditFeePercent(location.xendit_platform_fee_percent ?? 0);
   }, [location]);
+
+  async function onSaveXendit() {
+    if (!location) return;
+    setXenditSaving(true);
+    setXenditError(null);
+    setXenditSuccess(false);
+    try {
+      const res = await fetch(`/api/admin/locations/${encodeURIComponent(location.id)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          xendit_enabled: xenditEnabled,
+          xendit_payout_channel_code: xenditChannelCode || null,
+          xendit_payout_account_number: xenditAccountNumber || null,
+          xendit_payout_account_holder_name: xenditAccountHolderName || null,
+          ...(me?.role === "admin" ? { xendit_platform_fee_percent: xenditFeePercent } : {}),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Failed to save");
+      setXenditSuccess(true);
+      setTimeout(() => setXenditSuccess(false), 2500);
+      if (me?.location_id) loadLocation(me.location_id);
+    } catch (err) {
+      setXenditError((err as Error).message);
+    } finally {
+      setXenditSaving(false);
+    }
+  }
 
   async function onSavePolicies() {
     if (!location) return;
@@ -545,6 +589,96 @@ export default function SettingsPage() {
                 {qrUploading ? "Uploading…" : "Save QR"}
               </button>
             </form>
+          </div>
+
+          {/* Xendit payments */}
+          <div className="rounded-xl border border-border bg-background p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-foreground">Accept online payments via Xendit</p>
+                <p className="text-xs text-muted mt-0.5">
+                  Customers pay instantly through a hosted checkout (cards, GCash, Maya, bank transfer) and the booking confirms automatically — no QR or receipt review needed. Runs alongside the Payment QR option above; enabling this takes priority over it.
+                </p>
+              </div>
+              <button type="button" onClick={() => setXenditEnabled((v) => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${xenditEnabled ? "bg-accent" : "bg-border"}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${xenditEnabled ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+            </div>
+
+            {xenditEnabled && (
+              <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wide">Payout destination</p>
+                <p className="text-[11px] text-muted -mt-2">Where your share gets sent after the platform disburses it to you.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] uppercase tracking-wide text-muted font-semibold">Channel</span>
+                    <select
+                      value={xenditChannelCode}
+                      onChange={(e) => setXenditChannelCode(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent"
+                    >
+                      <option value="">Select a channel…</option>
+                      <option value="PH_GCASH">GCash</option>
+                      <option value="PH_PAYMAYA">Maya</option>
+                      <option value="PH_BDO">BDO</option>
+                      <option value="PH_BPI">BPI</option>
+                      <option value="PH_UBP">UnionBank</option>
+                    </select>
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] uppercase tracking-wide text-muted font-semibold">Account / mobile number</span>
+                    <input
+                      type="text"
+                      value={xenditAccountNumber}
+                      onChange={(e) => setXenditAccountNumber(e.target.value)}
+                      placeholder="09171234567"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent"
+                    />
+                  </label>
+                </div>
+                <label className="block space-y-1">
+                  <span className="text-[11px] uppercase tracking-wide text-muted font-semibold">Account holder name</span>
+                  <input
+                    type="text"
+                    value={xenditAccountHolderName}
+                    onChange={(e) => setXenditAccountHolderName(e.target.value)}
+                    placeholder="Juan Dela Cruz"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[11px] uppercase tracking-wide text-muted font-semibold">Platform fee</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.1"
+                      value={xenditFeePercent}
+                      disabled={me?.role !== "admin"}
+                      onChange={(e) => setXenditFeePercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                      className="w-24 rounded-lg border border-border bg-background px-3 py-2 text-base sm:text-sm text-foreground focus:outline-none focus:border-accent disabled:opacity-50"
+                    />
+                    <span className="text-sm text-muted">%</span>
+                  </div>
+                  {me?.role !== "admin" && (
+                    <p className="text-[11px] text-muted">Set by the platform — contact support to change this.</p>
+                  )}
+                </label>
+              </div>
+            )}
+
+            {xenditError && <p className="text-xs text-accent font-semibold">{xenditError}</p>}
+            {xenditSuccess && <p className="text-xs text-green-600">Saved.</p>}
+            <button
+              type="button"
+              onClick={onSaveXendit}
+              disabled={xenditSaving}
+              className="rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-40"
+            >
+              {xenditSaving ? "Saving…" : "Save Xendit settings"}
+            </button>
           </div>
 
           {/* Map location */}

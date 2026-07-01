@@ -7,7 +7,7 @@ export async function GET() {
   // Fetch active locations with their active court count
   const { data, error } = await supabase
     .from("locations")
-    .select("id, name, slug, address, description, contact_email, contact_phone, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, allow_half_hour_bookings, courts(id)")
+    .select("id, name, slug, address, description, contact_email, contact_phone, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, xendit_enabled, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, allow_half_hour_bookings, courts(id)")
     .eq("is_active", true)
     .order("name");
 
@@ -43,6 +43,7 @@ export async function GET() {
     payment_qr_url: loc.payment_qr_url ?? null,
     payment_account_name: loc.payment_account_name ?? null,
     payment_account_number: loc.payment_account_number ?? null,
+    xendit_enabled: loc.xendit_enabled ?? false,
     latitude: loc.latitude ?? null,
     longitude: loc.longitude ?? null,
     logo_url: loc.logo_url ?? null,

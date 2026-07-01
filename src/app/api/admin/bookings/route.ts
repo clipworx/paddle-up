@@ -190,7 +190,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from("bookings")
-    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, refund_reason, receipt_url, receipt_uploaded_at, created_at, courts(name, locations(name))", { count: "exact" })
+    .select("id, court_id, date, start_time, end_time, booker_name, booker_phone, booker_email, player_count, notes, status, refund_reason, receipt_url, receipt_uploaded_at, created_at, payment_gateway, xendit_invoice_id, xendit_paid_amount, payout_status, payout_disbursement_id, payout_disbursed_at, xendit_refund_id, courts(name, locations(name))", { count: "exact" })
     .order("date", { ascending: false })
     .order("start_time", { ascending: false })
     .range(offset, offset + limit - 1);

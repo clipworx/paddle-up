@@ -81,7 +81,7 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  let body: { name?: unknown; address?: unknown; description?: unknown; contact_email?: unknown; contact_phone?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown; auto_expire_pending_payment?: unknown; pending_payment_expiry_hours?: unknown };
+  let body: { name?: unknown; address?: unknown; description?: unknown; contact_email?: unknown; contact_phone?: unknown; accent_color?: unknown; is_active?: unknown; slug?: unknown; require_downpayment?: unknown; downpayment_min_hours?: unknown; no_split_rate_booking?: unknown; allow_half_hour_bookings?: unknown; auto_expire_pending_payment?: unknown; pending_payment_expiry_hours?: unknown; xendit_enabled?: unknown; xendit_payout_channel_code?: unknown; xendit_payout_account_number?: unknown; xendit_payout_account_holder_name?: unknown; xendit_platform_fee_percent?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -115,6 +115,19 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid_expiry_hours" }, { status: 400 });
   }
 
+  const xendit_enabled = typeof body.xendit_enabled === "boolean" ? body.xendit_enabled : undefined;
+  const xendit_payout_channel_code = typeof body.xendit_payout_channel_code === "string" ? body.xendit_payout_channel_code.trim() || null : undefined;
+  const xendit_payout_account_number = typeof body.xendit_payout_account_number === "string" ? body.xendit_payout_account_number.trim() || null : undefined;
+  const xendit_payout_account_holder_name = typeof body.xendit_payout_account_holder_name === "string" ? body.xendit_payout_account_holder_name.trim() || null : undefined;
+  // Platform commission rate — only the platform (not a venue's own admin) may set this.
+  const xendit_platform_fee_percent = claims.role === "admin" && typeof body.xendit_platform_fee_percent === "number"
+    ? body.xendit_platform_fee_percent
+    : undefined;
+
+  if (xendit_platform_fee_percent !== undefined && (xendit_platform_fee_percent < 0 || xendit_platform_fee_percent > 100)) {
+    return NextResponse.json({ error: "invalid_fee_percent" }, { status: 400 });
+  }
+
   const updates: Record<string, unknown> = {};
   if (name !== null) updates.name = name;
   if (address !== undefined) updates.address = address;
@@ -130,6 +143,11 @@ export async function PUT(req: Request, { params }: Params) {
   if (allow_half_hour_bookings !== undefined) updates.allow_half_hour_bookings = allow_half_hour_bookings;
   if (auto_expire_pending_payment  !== undefined) updates.auto_expire_pending_payment  = auto_expire_pending_payment;
   if (pending_payment_expiry_hours !== undefined) updates.pending_payment_expiry_hours = pending_payment_expiry_hours;
+  if (xendit_enabled !== undefined) updates.xendit_enabled = xendit_enabled;
+  if (xendit_payout_channel_code !== undefined) updates.xendit_payout_channel_code = xendit_payout_channel_code;
+  if (xendit_payout_account_number !== undefined) updates.xendit_payout_account_number = xendit_payout_account_number;
+  if (xendit_payout_account_holder_name !== undefined) updates.xendit_payout_account_holder_name = xendit_payout_account_holder_name;
+  if (xendit_platform_fee_percent !== undefined) updates.xendit_platform_fee_percent = xendit_platform_fee_percent;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no_fields" }, { status: 400 });

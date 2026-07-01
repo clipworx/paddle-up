@@ -17,6 +17,8 @@ type ReceiptBooking = {
   created_at: string;
   court_name: string | null;
   location_name: string | null;
+  payment_gateway: "xendit" | null;
+  xendit_invoice_url: string | null;
   payment_qr_url: string | null;
   payment_account_name: string | null;
   payment_account_number: string | null;
@@ -121,17 +123,30 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
 
   function load() {
     setLoading(true);
-    fetch(`/api/bookings/${encodeURIComponent(id)}`)
+    refresh().finally(() => setLoading(false));
+  }
+
+  function refresh() {
+    return fetch(`/api/bookings/${encodeURIComponent(id)}`)
       .then((r) => r.json())
       .then((json) => {
         if (json.error) { setNotFound(true); return; }
         setBooking(json.booking);
       })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+      .catch(() => setNotFound(true));
   }
 
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While a Xendit payment is pending, poll quietly so this page flips to
+  // "confirmed" on its own once payment clears — each poll also re-checks
+  // with Xendit directly (see GET /api/bookings/[id]) so this works even if
+  // the webhook is delayed or never arrives.
+  useEffect(() => {
+    if (booking?.status !== "pending_payment" || booking?.payment_gateway !== "xendit") return;
+    const interval = setInterval(refresh, 5000);
+    return () => clearInterval(interval);
+  }, [booking?.status, booking?.payment_gateway]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onFileChange(f: File | null) {
     setFile(f);
@@ -209,7 +224,11 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
                 <div className={`font-op-mono text-[11px] font-bold tracking-widest ${banner.labelClass}`}>
                   {banner.label.toUpperCase()}
                 </div>
-                <p className="text-xs text-muted mt-0.5">{banner.body}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {booking?.status === "pending_payment" && booking.payment_gateway === "xendit"
+                    ? "Complete your payment to confirm your booking."
+                    : banner.body}
+                </p>
               </div>
             </div>
           </div>
@@ -254,7 +273,7 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
               </div>
             ) : (
               <>
-                {booking.status === "pending_payment" && booking.payment_qr_url && (
+                {booking.status === "pending_payment" && booking.payment_gateway !== "xendit" && booking.payment_qr_url && (
                   <div className="rounded-2xl bg-background p-5 shadow-sm flex flex-col items-center gap-3">
                     <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest self-start">Pay via QR</p>
                     <img
@@ -275,7 +294,22 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
                   </div>
                 )}
 
-                {(booking.status === "pending_payment" || booking.status === "pending_confirmation") && (
+                {booking.status === "pending_payment" && booking.payment_gateway === "xendit" && (
+                  <div className="rounded-2xl bg-background p-5 shadow-sm space-y-3 text-center">
+                    <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest">Complete your payment</p>
+                    <p className="text-sm text-muted">Finish paying to confirm this booking — it'll update automatically once payment clears.</p>
+                    {booking.xendit_invoice_url && (
+                      <a
+                        href={booking.xendit_invoice_url}
+                        className="block w-full rounded-full bg-accent text-white py-3 text-sm font-bold hover:opacity-90 transition-opacity shadow-sm"
+                      >
+                        Pay now
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {(booking.status === "pending_payment" || booking.status === "pending_confirmation") && booking.payment_gateway !== "xendit" && (
                   <div className="rounded-2xl bg-background p-5 shadow-sm space-y-3">
                     <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest">
                       {booking.receipt_url ? "Replace receipt" : "Upload your payment receipt"}
@@ -353,12 +387,21 @@ export default function ReceiptUploadPage({ params }: { params: Promise<{ id: st
                     <p className="font-op-mono text-[10px] font-bold text-muted uppercase tracking-widest mb-3.5">Confirmation status</p>
                     <div className="space-y-2.5">
                       <StepRow done label="Booking submitted" sub={fmtDateTime(booking.created_at)} />
-                      <StepRow
-                        done={confirmed}
-                        active={receiptUnderReview}
-                        label="Receipt under review"
-                        sub={booking.receipt_uploaded_at ? fmtDateTime(booking.receipt_uploaded_at) : "Usually within 1 hour"}
-                      />
+                      {booking.payment_gateway === "xendit" ? (
+                        <StepRow
+                          done={confirmed}
+                          active={!confirmed}
+                          label="Payment processing"
+                          sub="Confirms automatically once payment clears"
+                        />
+                      ) : (
+                        <StepRow
+                          done={confirmed}
+                          active={receiptUnderReview}
+                          label="Receipt under review"
+                          sub={booking.receipt_uploaded_at ? fmtDateTime(booking.receipt_uploaded_at) : "Usually within 1 hour"}
+                        />
+                      )}
                       <StepRow done={confirmed} label="Booking confirmed" sub="You'll get an email confirmation" />
                     </div>
                   </div>
