@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase-server";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const slugFilter = searchParams.get("slug");
+
   const supabase = getServerSupabase();
 
   // Fetch active locations with their active court count
-  const { data, error } = await supabase
+  let query = supabase
     .from("locations")
     .select("id, name, slug, address, description, contact_email, contact_phone, is_active, day_rate, night_rate, night_start_time, open_hour, close_hour, weekend_night_start_time, weekend_open_hour, weekend_close_hour, payment_qr_url, payment_account_name, payment_account_number, latitude, longitude, logo_url, accent_color, photo_url, subscription_due_date, subscription_grace_days, require_downpayment, downpayment_min_hours, no_split_rate_booking, allow_half_hour_bookings, courts(id)")
     .eq("is_active", true)
     .order("name");
+
+  if (slugFilter) {
+    query = query.eq("slug", slugFilter);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

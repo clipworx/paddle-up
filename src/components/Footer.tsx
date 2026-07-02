@@ -90,10 +90,7 @@ export function Footer() {
           <span className="text-sm font-bold text-foreground">Re<span className="text-accent">Z</span>erve</span>
         </div>
         <div className="flex items-center gap-6 text-xs text-muted">
-          <Link href="/book" className="hover:text-foreground transition-colors">Book now</Link>
-          <Link href="/play" className="hover:text-foreground transition-colors">Open play</Link>
           <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
-          <Link href="/admin" className="hover:text-foreground transition-colors">Admin</Link>
         </div>
       </div>
     </footer>

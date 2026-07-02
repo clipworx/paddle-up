@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { AdminNav } from "@/components/AdminNav";
 import { TIME_SLOTS } from "@/lib/types";
 import type { Booking, BookingStatus } from "@/lib/types";
@@ -413,13 +412,6 @@ export default function AdminBookingsPage() {
       <main className="mx-auto max-w-5xl w-full px-4 py-10 space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">Bookings</h1>
-          <Link
-            href="/book"
-            target="_blank"
-            className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-accent/10 hover:border-accent transition-colors"
-          >
-            Booking page ↗
-          </Link>
         </div>
 
         <div className="flex items-center gap-3">

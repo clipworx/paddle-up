@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, notFound } from "next/navigation";
 import { CalendarDays, CircleHelp, MapPin, Megaphone, Volleyball } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Footer } from "@/components/Footer";
@@ -511,7 +511,8 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
   const [nowTop, setNowTop] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/locations")
+    const url = initialSlug ? `/api/locations?slug=${encodeURIComponent(initialSlug)}` : "/api/locations";
+    fetch(url)
       .then((r) => r.json())
       .then((j) => {
         const locs: Location[] = j.locations ?? [];
@@ -1159,9 +1160,6 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
         <div className="rounded-2xl border border-border bg-background p-10 text-center space-y-3 shadow-sm">
           <p className="text-base font-bold text-foreground">Location not found</p>
           <p className="text-sm text-muted">No active location exists at this URL.</p>
-          <Link href="/book" className="inline-block rounded-lg bg-accent text-background px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors">
-            See all locations
-          </Link>
         </div>
       )}
 
@@ -2025,5 +2023,5 @@ export function BookingPage({ initialSlug }: { initialSlug?: string } = {}) {
 }
 
 export default function BookPage() {
-  return <BookingPage />;
+  notFound();
 }
